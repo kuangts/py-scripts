@@ -1,5 +1,5 @@
 #! /usr/bin/env python
-# asdf
+
 import dependencies_test # test if all dependency requirements are met
 import struct, sys, os, copy, re, plotly
 import numpy as np
