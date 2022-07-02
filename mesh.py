@@ -17,8 +17,8 @@ class MeshBase:
 		# does not alter input args
 		s = cls()
 		for arg in args:
-			s.connectivity = np.vstack((s.connectivity, other.connectivity+len(s.points))) 
-			s.points = np.vstack((s.points, other.points))
+			s.connectivity = np.vstack((s.connectivity, arg.connectivity+len(s.points))) 
+			s.points = np.vstack((s.points, arg.points))
 
 		s.remove_duplicate_points()
 		return s
