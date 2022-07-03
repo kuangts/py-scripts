@@ -4,7 +4,7 @@ import dependencies_test # test if all dependency requirements are met
 import struct, sys, os, copy, re, plotly
 import numpy as np
 
-class MeshBase: 
+class Base: 
 	
 	def deepcopy(self):
 		return copy.deepcopy(self)
@@ -35,9 +35,11 @@ class MeshBase:
 		self.points, ind = np.unique(self.points, axis=0, return_inverse=True)
 		self.connectivity[:], ind = np.unique(ind[self.connectivity].reshape(self.connectivity.shape), axis=0, return_index=True)
 
+	def __repr__(self):
+		s = f'points: {self.points.shape}\n{self.points}\n' + f'connectivity: {self.connectivity.shape}\n{self.connectivity}\n'
+		return s
 
-
-class TriangleSurface(MeshBase):
+class TriangleSurface(Base):
 
 	def __init__(self, V=[], F=[], **kwargs):
 		V = np.asarray(V, dtype=float).reshape(-1,3)
@@ -128,7 +130,7 @@ class TriangleSurface(MeshBase):
 
 
 
-class HexahedralMesh(MeshBase):
+class HexahedralMesh(Base):
 
 	def __init__(self, N=[], E=[], element_structure=None, **kwargs):
 		super().__init__(N,E, **kwargs)
@@ -161,7 +163,7 @@ class HexahedralMesh(MeshBase):
 			nodes = [node.split(',') for node in nodes.strip().split('\n')]
 			nodes = np.asarray(nodes, dtype=float)[:,1:]
 			elems = [elem.split(',') for elem in elems.strip().split('\n')]
-			elems = np.asarray(elems, dtype=int)[:,1:]
+			elems = np.asarray(elems, dtype=int)[:,1:]-1
 		else:
 			nodes, elems = [],[]
 
@@ -183,6 +185,10 @@ class HexahedralMesh(MeshBase):
 		m = cls(np.vstack((x.flat,y.flat,z.flat)).T, e, element_structure=s)
 		return m
 
+	def faces(self, boundary=False):
+		face_index = np.asarray([[4,3,2,1],[5,6,7,8],[1,2,6,5],[3,4,8,7],[2,3,7,6],[4,1,5,8]])
+		f = np.vstack([ self.E[:,ind] for ind in face_index ])
+		return f
 
 	# @property
 	# def G(self):
@@ -209,34 +215,6 @@ class HexahedralMesh(MeshBase):
 	# 				continue
 	# 			G[ei[0],:] = G[n,:] + self.element_structure[i,:]
 	# 			new_eid.append(ei[0]) # append
-
-	@property
-	def F(self):
-		face_index = np.asarray([[4,3,2,1],[5,6,7,8],[1,2,6,5],[3,4,8,7],[2,3,7,6],[4,1,5,8]])
-		f = np.vstack([ self.E[:,ind] for ind in face_index ])
-		return f
-
-
-
-
-
-
-
-	def subdivide(self):
-		nv, nf = len(self.V), len(self.F)
-		V0, V1, V2 = self.V[self.F[:,0]], self.V[self.F[:,1]], self.V[self.F[:,2]]
-		self.V = np.vstack((self.V, V0/2+V1/2, V1/2+V2/2, V0/2+V2/2))
-		ind01, ind12, ind02 = np.arange(nv,nv+nf), np.arange(nv+nf,nv+nf*2), np.arange(nv+nf*2,nv+nf*3)
-		f0 = np.vstack((ind02,self.F[:,0],ind01))
-		f1 = np.vstack((ind01,self.F[:,1],ind12))
-		f2 = np.vstack((ind12,self.F[:,2],ind02))
-		fc = np.vstack((ind02,ind01,ind12))
-		self.F = np.hstack((f0,f1,f2,fc)).T
-		self.update()
-
-
-
-
 
 
 
