@@ -41,9 +41,11 @@ class Base:
 
 class TriangleSurface(Base):
 
-	def __init__(self, V=[], F=[], **kwargs):
-		V = np.asarray(V, dtype=float).reshape(-1,3)
-		F = np.asarray(F, dtype=float).reshape(-1,3)
+	def __init__(self, V=np.empty((0,3)), F=np.empty((0,3)), **kwargs):
+		V = np.asarray(V, dtype=float)
+		F = np.asarray(F, dtype=float)
+		if F.size and F.shape[1]==4:
+			F = np.vstack((F[:,[1,2,3]],F[:,[1,3,4]]))
 		super().__init__(V, F)
 
 	@property
@@ -56,7 +58,6 @@ class TriangleSurface(Base):
 
 	@property
 	def FN(self):
-		print((self.V.shape), (self.F.shape))
 		v10 = self.V[self.F[:,1],:] - self.V[self.F[:,0],:]
 		v20 = self.V[self.F[:,2],:] - self.V[self.F[:,0],:]
 		fn = np.cross(v10, v20)
@@ -130,15 +131,14 @@ class TriangleSurface(Base):
 
 
 
-class HexahedralMesh(Base):
+class SoftTissueMesh(Base):
 
-	def __init__(self, N=[], E=[], element_structure=None, **kwargs):
+	def __init__(self, N=[], E=[], element_structure=[], **kwargs):
 		super().__init__(N,E, **kwargs)
-		if element_structure is None:
+		if not len(element_structure):
 			self.element_structure = self.__class__.G1
 		else:
 			self.element_structure = element_structure
-
 	@property
 	def N(self):
 		return self.points
@@ -147,6 +147,23 @@ class HexahedralMesh(Base):
 	def E(self):
 		return self.connectivity
 	
+	@property
+	def NG(self):
+		if not hasattr(self, '_NG') or not len(self._NG):
+			self._NG = np.empty(self.N.shape)
+			self._NG[:] = np.nan
+			self.set_grid_orientation()
+			self.update_grid()
+		return self._NG
+
+	@property
+	def G3D(self):
+		if not hasattr(self, '_G3D') or not len(self._G3D):
+			self._G3D = -np.ones(self.NG.max(axis=0)+1, dtype=int)
+			ind = np.ravel_multi_index(self.NG.T, self._G3D.shape)
+			self._G3D.flat[ind] = np.arange(self.NG.shape[0])
+		return self._G3D
+
 	@classmethod
 	def read(cls, file, ele_str=[]):
 		if file.endswith('.inp'):
@@ -169,7 +186,6 @@ class HexahedralMesh(Base):
 
 		return cls(nodes, elems)
 
-
 	# the two different element structure
 	G1 = np.asarray([[1,1,1],[1,0,1],[1,0,0],[1,1,0],[0,1,1],[0,0,1],[0,0,0],[0,1,0]], dtype=int)
 	G2 = np.asarray([[0,0,1],[1,0,1],[1,1,1],[0,1,1],[0,0,0],[1,0,0],[1,1,0],[0,1,0]], dtype=int)
@@ -190,32 +206,59 @@ class HexahedralMesh(Base):
 		f = np.vstack([ self.E[:,ind] for ind in face_index ])
 		return f
 
-	# @property
-	# def G(self):
-	# 	# find the [0,0,0] of the element_structure
-	# 	n0 = np.all(self.element_structure==np.asarray((0,0,0)), axis=1).nonzero()[0][0]
-	# 	n1 = set(range(self.E.shape[1]))
-	# 	n1.remove(n0)
-	# 	# start the calculation
-	# 	G = -np.ones(self.N.shape, dtype=int)
-		
-	# 	eid = np.isin(self.E[:,n0], (np.bincount(self.E.flat)==1).nonzero()[0][0]).nonzero()[0]
-	# 	G[self.E[eid[0]],:] = self.element_structure
-	# 	new_eid = [eid]
-	# 	it = 0
-	# 	while len(new_eid):
-	# 		print(new_eid)
-	# 		eid = new_eid.pop(0) 
-	# 		for i in n1:
-	# 			if it:
-	# 				n = self.E[eid,i]
-	# 				print(self.E[:,i],n)
-	# 				ei = (self.E[:,i]==n).nonzero()[0]
-	# 			if not len(ei):
-	# 				continue
-	# 			G[ei[0],:] = G[n,:] + self.element_structure[i,:]
-	# 			new_eid.append(ei[0]) # append
+	def set_grid_orientation(self):
+		# assumes u,v,w correspond to x,y,z, in both dimension and direction
+		# first, find 8 nodes with single occurence
+		occr = np.asarray([0]*self.N.shape[0])
+		for x in self.E.flat:
+			occr[x] += 1
+		n8 = np.where(occr==1)[0]
+		assert n8.size==8, 'check mesh'
+		# then, set the grid position of these eight nodes
+		# set left and right (-x -> -INF, +x -> +INF)
+		self._NG[n8,0] = np.where(self.N[n8,0]<np.median(self.N[n8,0]), np.NINF, np.PINF)
+		# set up and down (-z -> -INF, +z -> +INF)
+		self._NG[n8,2] = np.where(self.N[n8,2]<np.median(self.N[n8,2]), np.NINF, np.PINF)
+		# set front and back
+		n4 = n8[self.N[n8,2]<np.median(self.N[n8,2])] # top 4
+		c = self.N[n4].mean(axis=0)
+		n2 = n4[self.N[n4,0]<np.median(self.N[n4,0])] # top left
+		d = np.sum((self.N[n2] - c)**2, axis=1)**.5
+		self._NG[n2,1] = np.where(d<d.mean(), np.NINF, np.PINF)
+		n2 = n4[self.N[n4,0]>np.median(self.N[n4,0])] # top right
+		d = np.sum((self.N[n2] - c)**2, axis=1)**.5
+		self._NG[n2,1] = np.where(d<d.mean(), np.NINF, np.PINF)
 
+		n4 = n8[self.N[n8,2]>np.median(self.N[n8,2])] # bottom 4
+		c = self.N[n4].mean(axis=0)
+		n2 = n4[self.N[n4,0]<np.median(self.N[n4,0])] # bottom left
+		d = np.sum((self.N[n2] - c)**2, axis=1)**.5
+		self._NG[n2,1] = np.where(d<d.mean(), np.NINF, np.PINF)
+		n2 = n4[self.N[n4,0]>np.median(self.N[n4,0])] # bottom right
+		d = np.sum((self.N[n2] - c)**2, axis=1)**.5
+		self._NG[n2,1] = np.where(d<d.mean(), np.NINF, np.PINF)
+
+	def update_grid(self):
+		ele_str = np.ones((8,3))*.5
+		ind_preset = np.all(np.isinf(self._NG), axis=1).nonzero()[0]
+		for row,col in zip(*np.where(np.isin(self.E, ind_preset))):
+			ele_str[col] *= np.sign(self._NG[self.E[row,col]])
+		self._NG[:] = np.nan
+		newly_set = np.array([0], dtype=int)
+		self._NG[newly_set,:] = 0
+		ind_unset = np.any(np.isnan(self._NG), axis=1)
+		while np.any(ind_unset):
+			elem_set = np.isin(self.E, newly_set)
+			row_num = np.any(elem_set, axis=1)
+			elem, elem_set = self.E[row_num], elem_set[row_num]
+			for row in range(elem_set.shape[0]):
+				col = elem_set[row].nonzero()[0][0]
+				self._NG[elem[row],:] = ele_str + (self._NG[elem[row,col],:] - ele_str[col,:])
+			newly_set = np.intersect1d(elem, np.where(ind_unset)[0])
+			ind_unset[newly_set] = False
+
+		self._NG -= np.min(self._NG, axis=0)
+		self._NG = np.round(self._NG).astype(int)
 
 
 def sphere(radius=1., center=(0., 0., 0.), max_edge_length=.3):
