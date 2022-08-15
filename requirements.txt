@@ -2,4 +2,4 @@ numpy
 pandas
 SimpleITK
 plotly
-pydicom
+openpyxl
