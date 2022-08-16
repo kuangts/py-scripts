@@ -1,11 +1,13 @@
-import os, sys, re, argparse
+import os, sys, re, argparse, json
 from copy import deepcopy
 from math import isnan
 from collections.abc import Sequence
-from .miscell import Labels # this is the landmark labels, grouped like CASS GT library
 
 _nan = float('nan')
 _anynan = lambda x: any(map(isnan,x))
+with open('labels.json','r') as f:
+	Labels = json.loads(f.read())
+
 
 class Landmark(dict):
 	'''This is a class for handling landmark files of various formats
@@ -57,9 +59,11 @@ class Landmark(dict):
 			lmk.update(l)
 		return lmk
 
+	@property
 	def coordinates(self):
 		return list(self.values())
 
+	@property
 	def labels(self):
 		return list(self.keys())
 
@@ -169,8 +173,9 @@ class Landmark(dict):
 		# use list for labels and set for groups
 		# for a list of labels, returns one Landmark instance with selected labels
 		# for a set of groups, returns dictionary of Landmark instances
-
-		if isinstance(select_labels_or_groups, Sequence) and not isinstance(select_labels_or_groups, str):
+		if isinstance(select_labels_or_groups, str):
+			raise ValueError('use dict["key"] notation' )
+		elif isinstance(select_labels_or_groups, Sequence):
 			lmk_selected, lmk_remaining = self.__class__(), self.copy()
 			lmk_selected.update({ l:lmk_remaining.pop(l) for l in self if l in select_labels_or_groups })
 			return (lmk_selected, lmk_remaining) if return_remaining else lmk_selected
@@ -180,9 +185,6 @@ class Landmark(dict):
 			for s in select_labels_or_groups:
 				lmk_selected[s] = self.__class__({ l:lmk_remaining.pop(l) for l in self if l in Labels[s] })
 			return (lmk_selected, lmk_remaining) if return_remaining else lmk_selected
-
-		elif isinstance(select_labels_or_groups, str):
-			raise ValueError('use dict["key"] notation' )
 
 		else:
 			raise ValueError('input is not supported')
@@ -217,6 +219,54 @@ class Landmark(dict):
 		if isinstance(value, str):
 			value = (value,)
 		setattr(self, '_header', value)
+
+	def move_to_mask(self, mask, threshold=None):
+
+		import pkg_resources
+		try:
+			pkg_resources.require(['SimpleITK','scipy','numpy'])
+		except Exception as e:
+			print(e)
+			return None
+		import SimpleITK as sitk
+		import numpy as np
+		from scipy.ndimage import binary_dilation, binary_erosion
+
+		lmk_not_moved, lmk = self.select({'Detached'}, return_remaining=True)
+		ind2coord = lambda index: np.array([ mask.TransformIndexToPhysicalPoint(ind.tolist()) for ind in index ])
+		closest = lambda l, bd: bd[np.argmin(np.sum((bd - l)**2, axis=1)),:]
+
+		if isinstance(mask, sitk.SimpleITK.Image):
+			arr = sitk.GetArrayFromImage(mask)
+		else:
+			print('wrong input argument')
+			return None 
+		arr = arr>0
+		
+		# pass 1 - dilation
+		arr1_bd = np.logical_xor(arr, binary_dilation(arr))
+		arr1_bd_ind = np.array(np.nonzero(arr1_bd)).T[:,::-1]
+		coords_bd1 = ind2coord(arr1_bd_ind)
+
+		# pass 2 - erosion
+		arr2_bd = np.logical_xor(arr, binary_erosion(arr))
+		arr2_bd_ind = np.array(np.nonzero(arr2_bd)).T[:,::-1]
+		coords_bd2 = ind2coord(arr2_bd_ind)
+
+		# average two passes
+		coords_new = np.array([ closest(l, coords_bd1)/2 + closest(l, coords_bd2)/2 for l in self.coordinates ])
+
+		# check dist with thres
+		if threshold!=None:
+			d = np.sum((coords_new-self.coordinates)**2, axis=1)**.5
+			ind = d>threshold
+			coords_new[ind] = self.coordinates[ind]
+
+		lmk = Landmark(zip(lmk.labels, coords_new))
+		lmk.update(lmk_not_moved['Detached'])
+
+		return lmk
+
 
 
 if __name__=='__main__':
