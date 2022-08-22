@@ -6,75 +6,65 @@ import scipy, os, sys
 
 class Transform(np.ndarray):
 
-    def __init__(self):
-        super().__init__(np.eye(4))
+    def __new__(cls):
+        return np.asarray(np.eye(4)).view(cls)
 
     def __matmul__(self, other):
         assert isinstance(other, self.__class__)
         return super().__matmul__(other)
 
-    def apply(self, pointset):
-        x = pointset.v4 * self
-        return pointset.__class__(x[:,0:3]/x[:,3]) 
-
-    @classmethod
-    def identity(cls):
-        T = cls(np.eye(4))
-        return T
-
     def translate(self, t):
-        T = self.identity()
+        T = self.__class__()
         T[3, 0:3] = t
         return self@T
 
     def rotate(self, R):
-        T = self.identity()
+        T = self.__class__()
         T[0:3, 0:3] = R
         return self@T
 
     def scale(self, s):
-        T = self.identity()
+        T = self.__class__()
         T[3, 3] = 1/s
         return self@T
 
 class Pointset(np.ndarray):
 
     @property
+    def v4(self):
+        return np.hstack((self, np.ones((self.shape[0],1))))
+
+    @property
     def centroid(self):
         return self.mean(axis=0)[None,...]
 
-    def __init__(self, ps):
-        super().__init__(ps).reshape(-1,3)
-
     def __matmul__(self, other):
         if isinstance(other, Transform):
-            return other.apply(self)
+            x = self.v4 @ other
+            return (x[:,0:3]/x[:,[3]]).view(self.__class__)
         else:
             return super().__matmul__(other)
-
-    def v4(self, ps):
-        return np.hstack((self, np.ones((ps.shape[0],1))))
 
     def setdiff(self, other):
         this, other = self.tolist(), other.tolist()
         return self.__class__([x for x in this if x not in other])
 
     def knn_in(self, tar, k=1):
-        d = tar[None,:,:] - self[:,None,:]
-        ind = np.sum(d**2, axis=2).argsort(axis=1)
-        return ind[:, np.arange(k)]
+        d = scipy.spatial.distance_matrix(self, tar)
+        return d.argsort(axis=1)[:, np.arange(k)]
 
     def pca(self):
         c = self.centroid
         _, _, W = svd(self-c)
-        T = Transform.identity().translate(-c).rotate(W.T)
+        T = Transform().translate(-c).rotate(W.T)
         return T
 
 def detect_edges(_, f):
-    edg_all = f[:,[0,1,1,2,2,0]].reshape(-1,2).sort(axis=1)
+    edg_all = np.sort(f[:,[0,1,1,2,2,0]].reshape(-1,2), axis=1)
     edg, ind = np.unique(edg_all, axis=0, return_inverse=True)
     edg_bd = edg[np.bincount(ind)==1]
     return np.unique(edg_bd)
+    # return np.hstack((edg_bd[:,0], edg_bd[:,1]))
 
 
 def define_cutoff(v, f):
@@ -85,17 +75,17 @@ def define_cutoff(v, f):
 
 def loadmat(file, varnames):
     with h5.File(file,'r') as f:
-        return {v:np.asarray(f[v]) for v in varnames}
+        return {v:np.asarray(f[v]).T for v in varnames}
 
 
 ###################################################################################
 
 
-def procrustes(v_src, v_tar, scaling=True, reflection=False): # B === b * A @ R + c
+def procrustes(v_src, v_tar, scaling=True, reflection=False, full_return=False): # B === b * A @ R + c
     # R = scipy.linalg.sqrtm(H.T @ H) @ scipy.linalg.inv(H) # one liner, but might be slower
 
-    T = Transform.identity()
-    A, B = v_src, v_tar
+    T = Transform()
+    A, B = v_src.view(Pointset), v_tar.view(Pointset)
     Ac, Bc = A.centroid, B.centroid
     A, B = A - Ac, B - Bc
     T = T.translate(-Ac)
@@ -111,10 +101,25 @@ def procrustes(v_src, v_tar, scaling=True, reflection=False): # B === b * A @ R 
         SN[-1,-1] = -1.
         R = V.T @ SN @ U.T
     T = T.rotate(R).translate(Bc)
-    return T
+
+    if full_return:
+        At = v_src.view(Pointset) @ T
+        err = np.sum((At-B)**2) / np.sum(B**2)
+        return (err, At, T)
+    else:
+        return T
 
 
-def icp(v_src, v_tar, edg_src, edg_tar, pre_aligned=False):
+def icp(v_src=None, v_tar=None, edg_src=None, edg_tar=None, pre_aligned=False):
+    mat = loadmat(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\MATLAB\surface_matching_complete_code\nonrigidICP\translation.mat', ['target','source','Indices_edgesS','Indices_edgesT','x','y'])
+    v_src = mat['source'].view(Pointset)
+    v_tar = mat['target'].view(Pointset)
+    edg_src = mat['Indices_edgesS'].astype(int).flatten()-1
+    edg_tar = mat['Indices_edgesT'].astype(int).flatten()-1
+    pre_aligned=True
+    x = mat['x'].astype(int).flatten()-1
+    y = mat['y'].astype(int).flatten()-1
+
     T = Transform()
     if not pre_aligned:
         T_src_pca = v_src.pca()
@@ -127,24 +132,21 @@ def icp(v_src, v_tar, edg_src, edg_tar, pre_aligned=False):
     v_src_start = v_src.copy()
     while len(error)<2 or error[-2]-error[-1]>1e-6:
 
-        IDX1 = v_src.knn_in(v_tar)
-        IDX2 = v_tar.knn_in(v_src)
-        IDX1 = dict(zip(range(len(IDX1)), zip(IDX1, np.sum((v_tar(IDX1)-v_src)**2, axis=1)**.5)))
-        IDX2 = dict(zip(range(len(IDX2)), zip(IDX2, np.sum((v_src(IDX2)-v_tar)**2, axis=1)**.5)))
+        IDX1 = v_src.knn_in(v_tar).flatten()
+        IDX2 = v_tar.knn_in(v_src).flatten()
+        x1 = np.logical_not(np.isin(IDX1, edg_tar))
+        x2 = np.logical_not(np.isin(IDX2, edg_src))
+        print(x1.sum())
+        print(x2.sum())
+        ERR1 = np.sum((v_tar[IDX1[x1]]-v_src[x1])**2, axis=1)**.5
+        ERR2 = np.sum((v_src[IDX2]-v_tar)**2, axis=1)**.5
+        x2[ERR2 > ERR1.mean() + 1.96*ERR1.std(ddof=1)] = False
 
-        IDX1 = { k:v for k,v in IDX1.items() if v[0] not in np.unique(edg_tar) }
-        IDX2 = { k:v for k,v in IDX2.items() if v[0] not in np.unique(edg_src) }
-        d = np.array([ v[1] for v in IDX1.values() ])
-        thres = d.mean() + 1.96*d.std()
-        IDX2 = { k:v for k,v in IDX2.items() if v[1]<thres }
+        v_src = np.vstack((v_src[x1,:], v_src[IDX2[x2],:])).view(Pointset)
+        v_tar = np.vstack((v_tar[IDX1[x1],:], v_tar[x2,:])).view(Pointset)
 
-        id1,_ = zip(*IDX1.values())
-        id2,_ = zip(*IDX2.values())
-        v_src = np.vstack((v_src[list(IDX1.keys()),:], v_src[id2,:]))
-        v_tar = np.vstack((v_tar[id1,:], v_tar[list(IDX2.keys()),:]))
-
-        v_src = v_src @ procrustes(v_src, v_tar)
-        error.append(np.sum((v_src-v_tar)**2) / np.sum(v_tar**2))
+        err, v_src, T_temp = procrustes(v_src, v_tar, full_return=True)
+        error.append(err)
         
     T = T @ procrustes(v_src_start, v_src)
 

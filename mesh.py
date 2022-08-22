@@ -39,14 +39,11 @@ class _Base:
 		if not self.points.size or not self.connectivity.size:
 			return
 		self.points = self.points.round(decimals=6)
-		_, ord, ind = np.unique(self.points, axis=0, return_index=True, return_inverse=True)
-		self.points, self.connectivity = self.points[ord], ind[self.connectivity]
-		ord = np.argsort(ord)
-		ind = np.empty_like(ord)
-		ind[ord] = np.arange(ord.size)
-		self.points, self.connectivity = self.points[ord], ind[self.connectivity]
-		_, ind = np.unique(self.connectivity, axis=0, return_index=True)
-		self.connectivity = self.connectivity[np.sort(ind),:]
+		self.points, ind = np.unique(self.points, axis=0, return_inverse=True)
+		self.connectivity = np.unique(ind[self.connectivity], axis=0)
+		f_unique, ind = np.unique(self.connectivity, return_inverse=True)
+		self.connectivity = ind.reshape(self.connectivity.shape)
+		self.points = self.points[f_unique,:]
 
 	@classmethod
 	def read(cls, file, **initargs): # convenience method to keep consistent use of attr 'read', meant to be overriden
