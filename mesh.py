@@ -145,7 +145,7 @@ class TriangleSurface(_Base):
 		fig.add_trace(trc)
 		if figure is None:
 			fig.show()
-
+		return trc
 
 class HexahedralMesh(_Base):
 

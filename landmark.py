@@ -1,4 +1,5 @@
 import os, sys, re, argparse, json
+import plotly
 from copy import deepcopy
 from math import isnan
 from collections.abc import Sequence
@@ -266,6 +267,19 @@ class Landmark(dict):
 		lmk.update(lmk_not_moved['Detached'])
 
 		return lmk
+
+
+	def plot(self, figure=None, **kwargs):
+		# if 'intensity' not in kwargs:
+		# 	kwargs['intensity'] = self.V[:,0]
+		# 	kwargs['colorscale'] = [(0, "red"), (1, "blue")]
+		xyz = dict(zip(['x','y','z'], zip(*self.coordinates)))
+		trc = plotly.graph_objects.Scatter3d(**xyz, text=self.labels, **kwargs)
+		fig = plotly.graph_objects.Figure() if figure is None else figure
+		fig.add_trace(trc)
+		if figure is None:
+			fig.show()
+
 
 
 

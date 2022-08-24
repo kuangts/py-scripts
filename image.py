@@ -1,13 +1,10 @@
-import numpy
-import time, os
-from typing import List, Union
-import dicom
-
 from SimpleITK.SimpleITK import *
 from SimpleITK.SimpleITK import _SetImageFromArray
 from SimpleITK.extra import *
 from SimpleITK._version import __version__
 
+import numpy, dicom, pyvista
+from mesh import TriangleSurface
 
 ###### NEEDS MORE TEST ######
 class Image(Image):
@@ -50,7 +47,8 @@ class Image(Image):
 
     @classmethod
     def read(cls, img_path, **initargs):
-        return cls(ReadImage(img_path))
+        img = ReadImage(img_path)
+        return cls(img)
 
     def update_array(self, arr):
 
@@ -111,3 +109,45 @@ class Image(Image):
         resampler.SetUseNearestNeighborExtrapolator(useNearestNeighborExtrapolator)
         print('resampled from {} {} to {} {}'.format(self['spacing'], self['shape'], spacing, shape))
         return __class__(resampler.Execute(self))
+
+
+def seg2surf(bin_img):
+    gd = pyvista.UniformGrid(
+        dims=bin_img.GetSize(),
+        spacing=bin_img.GetSpacing(),
+        origin=bin_img.GetOrigin(),
+    )
+    m = gd.contour([.5], bin_img.array.transpose([2,1,0]).flatten(), method='marching_cubes')
+    return TriangleSurface(m.points, m.faces.reshape(-1, 4)[:,1:])
+
+
+def seg2surf_vtk(bin_img):
+
+    from dicom2stl.utils.sitk2vtk import sitk2vtk
+    import itk, vtk
+    bin_img = sitk2vtk(bin_img)
+    dmc = vtk.vtkDiscreteMarchingCubes()
+    dmc.SetInputData(bin_img)
+    dmc.ComputeNormalsOn()
+    dmc.GenerateValues(1, 1, 1)
+    dmc.Update()
+    meshout = dmc.GetOutput()
+    filt = vtk.vtkSmoothPolyDataFilter()
+    filt.SetInputData(meshout)
+    filt.FeatureEdgeSmoothingOn()
+    filt.Update()
+    meshout = filt.GetOutput()
+
+    # filt = itk.CuberilleImageToMeshFilter()
+    # filt.SetInput(bin_img)
+    # filt.SetIsoSurfaceValue(1)
+    # filt.Update()
+    # meshout = filt.GetOutput()
+    # print(meshout)
+    # print(type(meshout))
+
+    V = vtk.util.numpy_support.vtk_to_numpy(meshout.GetPoints().GetData())
+    F = vtk.util.numpy_support.vtk_to_numpy(meshout.GetPolys().GetData()).astype(int).reshape(-1,4)[:,1:4]
+
+    return TriangleSurface(V,F)
+
