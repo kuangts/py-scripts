@@ -90,22 +90,24 @@ def procrustes(v_src, v_tar, scaling=True, reflection=False, full_return=False):
     A, B = A - Ac, B - Bc
     T = T.translate(-Ac)
     if scaling:
-        b = np.sum(B**2)**.5/np.sum(A**2)**.5
+        b = (np.sum(B**2)**.5)/(np.sum(A**2)**.5)
         A = A*b
         T = T.scale(b)
-    H = A.T @ B
+    H = B.T @ A
     U,S,V = svd(H)
     R = V.T @ U.T
+    print((S**.5))
     if det(R)<0 and not reflection:
         SN = np.eye(3)
         SN[-1,-1] = -1.
         R = V.T @ SN @ U.T
+    A = A @ R + Bc
     T = T.rotate(R).translate(Bc)
 
     if full_return:
         At = v_src.view(Pointset) @ T
-        err = np.sum((At-B)**2) / np.sum(B**2)
-        return (err, At, T)
+        err = np.sum((A-v_tar)**2) / np.sum(B**2)
+        return (err, A, T)
     else:
         return T
 
