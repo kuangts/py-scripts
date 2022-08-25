@@ -1,6 +1,5 @@
 __pycache__
-.venv
-.vscode
-asset
-test
+.venv/
+asset/
+test/
 __pycache__/
