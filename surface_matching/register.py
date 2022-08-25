@@ -1,57 +1,62 @@
-import numpy as np
+import sys, h5py
+from numpy import *
 from numpy.linalg import svd, det
-import h5py as h5
-import scipy, os, sys
+from time import perf_counter
+from sklearn.neighbors import KDTree
 
-
-class Transform(np.ndarray):
+class Transform(ndarray):
+    # typing only for hinting the editor
 
     def __new__(cls):
-        return np.asarray(np.eye(4)).view(cls)
+        return asarray(eye(4)).view(cls)
 
-    def __matmul__(self, other):
+    def __matmul__(self, other:'Transform'):
         assert isinstance(other, self.__class__)
         return super().__matmul__(other)
 
-    def translate(self, t):
+    def translate(self, t) -> 'Transform':
         T = self.__class__()
         T[3, 0:3] = t
         return self@T
 
-    def rotate(self, R):
+    def rotate(self, R) -> 'Transform':
         T = self.__class__()
         T[0:3, 0:3] = R
         return self@T
 
-    def scale(self, s):
+    def scale(self, s) -> 'Transform':
         T = self.__class__()
         T[3, 3] = 1/s
         return self@T
 
-class Pointset(np.ndarray):
+class Pointset(ndarray):
 
     @property
     def v4(self):
-        return np.hstack((self, np.ones((self.shape[0],1))))
+        return hstack((self, ones((self.shape[0],1))))
 
     @property
     def centroid(self):
         return self.mean(axis=0)[None,...]
 
-    def __matmul__(self, other):
+    def __matmul__(self, other) -> 'Pointset':
         if isinstance(other, Transform):
             x = self.v4 @ other
-            return (x[:,0:3]/x[:,[3]]).view(self.__class__)
+            x = x[:,0:3]/x[:,[3]]
         else:
-            return super().__matmul__(other)
+            x = super().__matmul__(other)
+        return x.view(self.__class__)
 
-    def setdiff(self, other):
+    def setdiff(self, other:'Pointset'):
         this, other = self.tolist(), other.tolist()
         return self.__class__([x for x in this if x not in other])
 
-    def knn_in(self, tar, k=1):
-        d = scipy.spatial.distance_matrix(self, tar)
-        return d.argsort(axis=1)[:, np.arange(k)]
+    def knn(self, qry, k=1):
+        # no tree, slow for large set
+        if not hasattr(self,'tree'):
+            setattr(self, 'tree', KDTree(self))
+        ind = self.tree.query(qry, k=k, return_distance=False)
+        return ind
 
     def pca(self):
         c = self.centroid
@@ -59,104 +64,105 @@ class Pointset(np.ndarray):
         T = Transform().translate(-c).rotate(W.T)
         return T
 
-def detect_edges(_, f):
-    edg_all = np.sort(f[:,[0,1,1,2,2,0]].reshape(-1,2), axis=1)
-    edg, ind = np.unique(edg_all, axis=0, return_inverse=True)
-    edg_bd = edg[np.bincount(ind)==1]
-    return np.unique(edg_bd)
-    # return np.hstack((edg_bd[:,0], edg_bd[:,1]))
-
-
-def define_cutoff(v, f):
-    edg = f[:,[0,1,1,2,2,0]].reshape(-1,2)
-    d = ((v[edg[:,1]]-v[edg[:,0]])**2).sum(axis=1)**.5
-    return np.mean(d)
-
-
-def loadmat(file, varnames):
-    with h5.File(file,'r') as f:
-        return {v:np.asarray(f[v]).T for v in varnames}
+    # return hstack((edg_bd[:,0], edg_bd[:,1]))
 
 
 ###################################################################################
 
 
-def procrustes(v_src, v_tar, scaling=True, reflection=False, full_return=False): # B === b * A @ R + c
-    # R = scipy.linalg.sqrtm(H.T @ H) @ scipy.linalg.inv(H) # one liner, but might be slower
-
-    T = Transform()
-    A, B = v_src.view(Pointset), v_tar.view(Pointset)
+def procrustes(A:Pointset, B:Pointset, scaling=True, reflection=False, full_return=False): # B ~== b * A @ R + c
+    
+    # translation
     Ac, Bc = A.centroid, B.centroid
     A, B = A - Ac, B - Bc
-    T = T.translate(-Ac)
-    if scaling:
-        b = (np.sum(B**2)**.5)/(np.sum(A**2)**.5)
-        A = A*b
-        T = T.scale(b)
-    H = B.T @ A
-    U,S,V = svd(H)
-    R = V.T @ U.T
-    print((S**.5))
+    U,S,V = svd(A.T @ B)
+    # scaling
+    b = S.sum()/sum(A**2) if scaling else 1
+    A = A*b
+    # rotation
+    R = U @ V
     if det(R)<0 and not reflection:
-        SN = np.eye(3)
-        SN[-1,-1] = -1.
-        R = V.T @ SN @ U.T
-    A = A @ R + Bc
-    T = T.rotate(R).translate(Bc)
-
+        SN = eye(3)
+        SN[-1,-1] = -1
+        R = U @ SN @ V
+    A = A @ R
+    T = Transform().translate(-Ac).scale(b).rotate(R).translate(Bc)
+    
     if full_return:
-        At = v_src.view(Pointset) @ T
-        err = np.sum((A-v_tar)**2) / np.sum(B**2)
-        return (err, A, T)
+        return (
+            sum((A-B)**2) / sum(B**2), # procrustes distance
+            A+Bc,                      # aligned A
+            T,                         # transformation A->B
+        ) 
     else:
         return T
 
 
-def icp(v_src=None, v_tar=None, edg_src=None, edg_tar=None, pre_aligned=False):
-    mat = loadmat(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\MATLAB\surface_matching_complete_code\nonrigidICP\translation.mat', ['target','source','Indices_edgesS','Indices_edgesT','x','y'])
-    v_src = mat['source'].view(Pointset)
-    v_tar = mat['target'].view(Pointset)
-    edg_src = mat['Indices_edgesS'].astype(int).flatten()-1
-    edg_tar = mat['Indices_edgesT'].astype(int).flatten()-1
-    pre_aligned=True
-    x = mat['x'].astype(int).flatten()-1
-    y = mat['y'].astype(int).flatten()-1
+def detect_edges(_, f):
+    edg_all = sort(f[:,[0,1,1,2,2,0]].reshape(-1,2), axis=1)
+    edg, ind = unique(edg_all, axis=0, return_inverse=True)
+    edg_bd = edg[bincount(ind)==1]
+    return unique(edg_bd)
 
-    T = Transform()
-    if not pre_aligned:
-        T_src_pca = v_src.pca()
-        T_tar_pca = v_tar.pca()
-        v_src = v_src @ T_src_pca
-        v_tar = v_tar @ T_tar_pca
-        T = T @ T_tar_pca
-    error = []
+
+def icp(v_src:Pointset=None, v_tar:Pointset=None, edg_src=None, edg_tar=None, full_return=False):
 
     v_src_start = v_src.copy()
+    error = []
+
     while len(error)<2 or error[-2]-error[-1]>1e-6:
 
-        IDX1 = v_src.knn_in(v_tar).flatten()
-        IDX2 = v_tar.knn_in(v_src).flatten()
-        x1 = np.logical_not(np.isin(IDX1, edg_tar))
-        x2 = np.logical_not(np.isin(IDX2, edg_src))
-        print(x1.sum())
-        print(x2.sum())
-        ERR1 = np.sum((v_tar[IDX1[x1]]-v_src[x1])**2, axis=1)**.5
-        ERR2 = np.sum((v_src[IDX2]-v_tar)**2, axis=1)**.5
+        IDX1 = v_tar.knn(v_src).flatten()
+        IDX2 = v_src.knn(v_tar).flatten()
+        x1 = logical_not(isin(IDX1, edg_tar))
+        x2 = logical_not(isin(IDX2, edg_src))
+        ERR1 = sum((v_tar[IDX1[x1]]-v_src[x1])**2, axis=1)**.5
+        ERR2 = sum((v_src[IDX2]-v_tar)**2, axis=1)**.5
         x2[ERR2 > ERR1.mean() + 1.96*ERR1.std(ddof=1)] = False
 
-        v_src = np.vstack((v_src[x1,:], v_src[IDX2[x2],:])).view(Pointset)
-        v_tar = np.vstack((v_tar[IDX1[x1],:], v_tar[x2,:])).view(Pointset)
+        d_src = vstack((v_src[x1,:], v_src[IDX2[x2],:])).view(Pointset)
+        d_tar = vstack((v_tar[IDX1[x1],:], v_tar[x2,:])).view(Pointset)
 
-        err, v_src, T_temp = procrustes(v_src, v_tar, full_return=True)
+        err, _, T = procrustes(d_src, d_tar, full_return=True)
+        v_src = v_src @ T
         error.append(err)
-        
-    T = T @ procrustes(v_src_start, v_src)
 
-    if not pre_aligned:
-        T = T @ T_tar_pca.T
+    T = procrustes(v_src_start, v_src)
+    if full_return:
+        return (error[-1], v_src, T)
+    else:
+        return T
 
-    return T
+
+def nicp(v_src:Pointset, v_tar:Pointset, f_src, f_tar, iterations):
+    # define cutoff
+    edg = f_src[:,[0,1,1,2,2,0]].reshape(-1,2)
+    d = ((v_src[edg[:,1]]-v_src[edg[:,0]])**2).sum(axis=1)**.5
+    cutoff = mean(d)
+
+    # detect edges
+    edg_src = detect_edges(v_src, f_src)
+    edg_tar = detect_edges(v_tar, f_tar)
+
+    # initial alignment and scaling
+    err, v_src, T = icp(v_src, v_tar, full_return=True)
+
 
 if __name__=='__main__':
     file = sys.argv[1]
-    locals().update(loadmat(file,['v_registered','f_from','v_to','f_to']))
+    with h5py.File(file,'r') as f:
+        vars = ['f_from','f_to','v_from','v_to']
+        for v in vars:
+            locals()[v] = asarray(f[v]).T
+
+    f_from = f_from.astype(int)-1
+    f_to = f_to.astype(int)-1
+    edg_src = detect_edges(None, f_from)
+    edg_tar = detect_edges(None, f_to)
+
+    t1 = perf_counter()
+    err, v_aligned, T = icp(v_from.view(Pointset), v_to.view(Pointset), edg_src, edg_tar, full_return=True)
+    t2 = perf_counter()
+    print(f'{t2-t1} seconds elapsed')
+    print(f'error: {err}')
+    print(f'transformation matrix: \n{T}')
