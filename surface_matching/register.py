@@ -32,20 +32,8 @@ class Transform(ndarray):
 class Pointset(ndarray):
 
     @property
-    def v4(self):
-        return hstack((self, ones((self.shape[0],1))))
-
-    @property
     def centroid(self):
-        return self.mean(axis=0)[None,...]
-
-    def __matmul__(self, other) -> 'Pointset':
-        if isinstance(other, Transform):
-            x = self.v4 @ other
-            x = x[:,0:3]/x[:,[3]]
-        else:
-            x = super().__matmul__(other)
-        return x.view(self.__class__)
+        return self.mean(axis=self.ndim-2).reshape(*self.shape[0:-2],1,self.shape[-1])
 
     def setdiff(self, other:'Pointset'):
         this, other = self.tolist(), other.tolist()
@@ -64,21 +52,24 @@ class Pointset(ndarray):
         T = Transform().translate(-c).rotate(W.T)
         return T
 
+    def transform(self, T):
+        return (self @ T[:3,:3] + T[-1:,:3]) / T[...,3,3]
     # return hstack((edg_bd[:,0], edg_bd[:,1]))
 
 
 ###################################################################################
 
 
-def procrustes(A:Pointset, B:Pointset, scaling=True, reflection=False, full_return=False): # B ~== b * A @ R + c
+def procrustes(A:Pointset, B:Pointset, scaling=True, reflection=False, full_return=False, rotation_only=False): # B ~== b * A @ R + c
     
     # translation
     Ac, Bc = A.centroid, B.centroid
-    A, B = A - Ac, B - Bc
+    A -= Ac
+    B -= Bc
     U,S,V = svd(A.T @ B)
     # scaling
     b = S.sum()/sum(A**2) if scaling else 1
-    A = A*b
+    A *= b
     # rotation
     R = U @ V
     if det(R)<0 and not reflection:
@@ -96,6 +87,34 @@ def procrustes(A:Pointset, B:Pointset, scaling=True, reflection=False, full_retu
         ) 
     else:
         return T
+
+
+def prcsts(A:ndarray, B:ndarray, T:Transform, d:ndarray, scaling=True, reflection=False): # B ~== b * A @ R + c
+    
+    assert all(A.shape==B.shape) and A.ndim>=2
+    n = A.ndim
+    At = A
+    Ac, Bc = A.centroid, B.centroid
+    A -= Ac
+    B -= Bc
+    U,S,V = svd(A.transpose((*range(n-2),-1,-2)) @ B)
+    b = S.sum(-1) / sum(A**2, (-1,-2)) if scaling else 1
+    R = matmul(U,V)
+    id = det(R)<0
+    if any(id) and not reflection:
+        SN = eye(3)
+        SN[-1,-1] = -1
+        R[id,:,:] = U[id,:,:] @ SN @ V[id,:,:]
+
+    A = array(b)[...,None,None] * A @ R + Bc
+    T[:] = Transform().translate(-Ac).scale(b).rotate(R).translate(Bc)
+    At[:] = A
+    d[:] = sum((A-B)**2) / sum(B**2)
+
+
+
+
+
 
 
 def detect_edges(_, f):
@@ -124,7 +143,7 @@ def icp(v_src:Pointset=None, v_tar:Pointset=None, edg_src=None, edg_tar=None, fu
         d_tar = vstack((v_tar[IDX1[x1],:], v_tar[x2,:])).view(Pointset)
 
         err, _, T = procrustes(d_src, d_tar, full_return=True)
-        v_src = v_src @ T
+        v_src = v_src.transform(T)
         error.append(err)
 
     T = procrustes(v_src_start, v_src)
