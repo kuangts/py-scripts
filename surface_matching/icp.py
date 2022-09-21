@@ -1,3 +1,7 @@
+'''
+This module is currently not used for non rigid-body surface registration purpose
+'''
+
 import numpy as np
 from numpy import sum, isin, inf, exp
 from scipy.spatial import KDTree
