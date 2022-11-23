@@ -1,5 +1,6 @@
 __pycache__
-.venv/
+.venv*/
+dk
 asset/
 test/
 __pycache__/

@@ -6,3 +6,4 @@ SimpleITK
 plotly
 openpyxl
 sklearn
+open3d

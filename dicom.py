@@ -1,4 +1,6 @@
 from collections.abc import Sequence
+from urllib.request import urlopen
+from threading import Thread
 from xml.etree import ElementTree as ET
 import os, re, codecs, csv, shutil, time
 import SimpleITK as sitk
@@ -113,9 +115,34 @@ class Info(dict):
             if temp_copy:
                 os.remove(temp_copy)
 
+def load_table(table):
+    # part06.html and dicom.css are downloaded from https://dicom.nema.org/medical/dicom/current/output/html/ with no modification
+    local_file = rf'{__file__}\..\nema-dicom-part06\part06.html'
+    if os.path.isfile(local_file):
+        with codecs.open(local_file, mode='r', encoding='utf-8') as f:
+            t = f.read()
+    else:
+        print('loading dicom dictionary from https://dicom.nema.org/medical/dicom/current/output/html/part06.html')
+        with urlopen('https://dicom.nema.org/medical/dicom/current/output/html/part06.html') as u:
+            t = u.read().decode('utf-8')
+    body = re.findall(r'<body>.*</body>', t, re.MULTILINE | re.DOTALL)[0]
+    tree = ET.fromstring(body)
+
+    for tr in tree.find(".//*[@id='table_6-1']/..//*[@class='table-contents']/table/tbody"):
+        entry = []
+        row = tr.findall('./td/p')
+        for d in [0, 1, 3]:
+            try:
+                entry += [row[d].find('span').text]
+            except:
+                try:
+                    entry += [row[d].find('a').tail]
+                except:
+                    entry += [row[d].text]
+        table += [Tag([*entry.pop(0).lower().strip('()').split(','),
+                        *map(str, entry)])]  # only use Tag.__init__() here at the creation
 
 class Dictionary:
-    # part06.html and dicom.css are downloaded from https://dicom.nema.org/medical/dicom/current/output/html/ with no modification
     tags_for_record = [
         "Study ID",  # example FACEPRED
         "Clinical Trial Subject ID",
@@ -131,6 +158,11 @@ class Dictionary:
         "Series Date",
         "Patient Comments",
     ]
+
+    def __init__(self):
+        setattr(self, 'table', [])
+        self._t = Thread(target=load_table, args=(self.table,))
+        self._t.start()
 
     def __repr__(self):
         return '\n'.join([t.__repr__() for t in self.lookup_table])
@@ -175,8 +207,8 @@ class Dictionary:
                 if item.lower() == table[i][2].lower():
                     return table[i]
             for i in range(len(table)):
-                it = ''.join(map(str.isalnum, item.lower()))
-                tb = ''.join(map(str.isalnum, table[i][2].lower()))
+                it = ''.join(filter(str.isalnum, item.lower()))
+                tb = ''.join(filter(str.isalnum, table[i][2].lower()))
                 if it == tb:
                     return table[i]
 
@@ -184,34 +216,21 @@ class Dictionary:
             for i in range(len(table)):
                 if item[0].lower() == table[i][0] and item[1].lower() == table[i][1]:
                     return table[i]
-
+            else:
+                return Tag([*item, 'NA', 'NA'])
         raise ValueError(f'{item} is not in dicom dictionary')
 
     @property
     def lookup_table(self):
-        if hasattr(self, 'table'):
+        if hasattr(self, '_t') and self._t.is_alive:
+            self._t.join()
+            delattr(self, '_t')
             return self.table
-        with codecs.open(rf'{__file__}\..\nema-dicom-part06\part06.html', mode='r', encoding='utf-8') as f:
-            t = f.read()
-            body = re.findall(r'<body>.*</body>', t, re.MULTILINE | re.DOTALL)[0]
-            tree = ET.fromstring(body)
-
-        table = []
-        for tr in tree.find(".//*[@id='table_6-1']/..//*[@class='table-contents']/table/tbody"):
-            entry = []
-            row = tr.findall('./td/p')
-            for d in [0, 1, 3]:
-                try:
-                    entry += [row[d].find('span').text]
-                except:
-                    try:
-                        entry += [row[d].find('a').tail]
-                    except:
-                        entry += [row[d].text]
-            table += [Tag([*entry.pop(0).lower().strip('()').split(','),
-                           *map(str, entry)])]  # only use Tag.__init__() here at the creation
-        setattr(self, 'table', table)
-        return table
+        else:
+            if not hasattr(self,'table'):
+                setattr(self, 'table', [])
+                load_table(self.table)
+            return self.table
 
     def search(self, *list_of_necessary_words):
         result = []
@@ -220,7 +239,7 @@ class Dictionary:
                 result += [t]
         return result
 
-    def vr(self, *item):
+    def vr(self, *item): # value representation
         table = self.lookup_table
         if len(item) == 1:
             item = item[0]
@@ -235,54 +254,69 @@ class Dictionary:
                     return table[i][3]
         raise ValueError(f'{item} is not in dicom dictionary')
 
-
-def read(dicom_series_file_or_dir, return_image=True, return_info=False, **dicomargs):
-    dicom_series_file_or_dir = os.path.normpath(os.path.realpath(os.path.expanduser(dicom_series_file_or_dir)))
-    if not os.path.exists(dicom_series_file_or_dir):
-        return None
-    elif os.path.isfile(dicom_series_file_or_dir):
-        try:
-            file_reader = sitk.ImageFileReader()
-            file_reader.SetFileName(dicom_series_file_or_dir)
-            file_reader.ReadImageInformation()
-            dicom_series_file_or_dir = os.path.dirname(
-                dicom_series_file_or_dir)  # change this later to finding files within the same series
-        except:
-            print(dicom_series_file_or_dir, "has no image information")
-            return None
-
-    series_IDs = sitk.ImageSeriesReader.GetGDCMSeriesIDs(dicom_series_file_or_dir)
-    if not series_IDs:
-        print("ERROR: directory \"" + dicom_series_file_or_dir + "\" does not contain a DICOM series.")
-        return None
-    if len(series_IDs) > 1:
-        print('WARNING: more than one series found')
-
-    result = ()
-    dicom_names = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(dicom_series_file_or_dir, series_IDs[0])
-
-    if return_image:
-        reader = sitk.ImageSeriesReader()
-        reader.SetImageIO("GDCMImageIO")
-        reader.SetFileNames(dicom_names)
-        reader.MetaDataDictionaryArrayUpdateOn()
-        img = reader.Execute()
-        result += (img,)
-
-    if return_info:
+def read_info(file_or_dir, return_filenames=False):
+    def _get_info(file):
         file_reader = sitk.ImageFileReader()
-        file_reader.SetFileName(dicom_names[0])
+        file_reader.SetFileName(file)
         file_reader.LoadPrivateTagsOn()
         file_reader.ReadImageInformation()
         info = {k: file_reader.GetMetaData(k) for k in file_reader.GetMetaDataKeys()}
-        result += (Info(info),)
+        return Info(info)
 
-    if len(result) == 1:
-        result = result[0]
-    return result
+    file_or_dir = os.path.normpath(os.path.realpath(file_or_dir))
+    if not os.path.exists(file_or_dir):
+        raise ValueError(f'{file_or_dir} is not a valid path')
+    if os.path.isfile(file_or_dir):
+        info = _get_info(file_or_dir)
+        if return_filenames:
+            return (
+                info,
+                sitk.ImageSeriesReader.GetGDCMSeriesFileNames(os.path.dirname(file_or_dir), info['0020|000e']),
+            )
+        else:
+            return info
+    elif os.path.isdir(file_or_dir):
+        series_IDs = sitk.ImageSeriesReader.GetGDCMSeriesIDs(file_or_dir)
+        if not series_IDs:
+            raise ValueError("directory \"" + file_or_dir + "\" does not contain a DICOM series.")
+        file_names = [sitk.ImageSeriesReader.GetGDCMSeriesFileNames(file_or_dir, id) for id in series_IDs]
+        dicom_names = file_names[0]
+        if len(series_IDs) > 1:
+            print('WARNING: more than one series found')
+            for i,id in enumerate(series_IDs):
+                print(f'  {i:>2} - {id} - {len(file_names[i])} slices')
+            try:
+                dicom_names = file_names[int(input('Select series to read...\n'))]
+            except:
+                raise ValueError('Read failed')
+        info = _get_info(dicom_names[0])
+        if return_filenames:
+            return (info, dicom_names)
+        else:
+            return info
+    else:
+        raise ValueError(f'{file_or_dir} invalid path')
 
 
-def write(img, dcm_dir, info, file_name_format='{:04}.dcm'):
+def read(file_or_dir):
+
+    info, dicom_names = read_info(file_or_dir, return_filenames=True)
+
+    reader = sitk.ImageSeriesReader()
+    reader.SetImageIO("GDCMImageIO")
+    reader.SetFileNames(dicom_names)
+    img = reader.Execute()
+    
+    if '0028|1052' in info and '0028|1053' in info:
+        img = (img - info['0028|1052']) * info['0028|1053']
+        info.pop('0028|1052')
+        info.pop('0028|1053')
+    
+    setattr(img, 'info', info)
+    return img
+
+
+def write(img, dcm_dir, file_name_format='{:04}.dcm'):
     dcm_dir = os.path.normpath(os.path.realpath(os.path.expanduser(dcm_dir)))
     if os.path.exists(dcm_dir) and not os.path.isdir(dcm_dir):
         print(f'cannot write to {dcm_dir}, not a directory')
@@ -323,26 +357,21 @@ def write(img, dcm_dir, info, file_name_format='{:04}.dcm'):
     direction = img.GetDirection()
     # Tags shared by the series.
     series_tag_values = {
-
+        "0008|0012":modification_date,
+        "0008|0013":modification_time,
         "0008|0060": "CT",
         # Setting the type to CT so that the slice location is preserved and the thickness is carried over.
         "0008|0008": "DERIVED\\SECONDARY",  # Image Type
-        "0020|000e": "1.2.826.0.1.3680043.2.1125." + modification_date + ".1" + modification_time,
-        # Series Instance UID
+        "0020|000e": "1.2.826.0.1.3680043.2.1125." + modification_date + ".1" + modification_time, # Series Instance UID
         "0020|0037": '\\'.join(map(str, (direction[0], direction[3], direction[6],
                                          direction[1], direction[4], direction[7]))),  # Image Orientation # (Patient)
     }
-    series_tag_values.update(info)
+    if hasattr(img, 'info'):
+        series_tag_values.update(img.info)
     # Write slices to output directory
     for i in range(img.GetDepth()):
         image_slice = img[:, :, i]
-        #   Instance Creation Date
-        series_tag_values["0008|0012"] = time.strftime("%Y%m%d")
-        #   Instance Creation Time
-        series_tag_values["0008|0013"] = time.strftime("%H%M%S")
-        # (0020, 0032) image position patient determines the 3D spacing between
-        # slices.
-        #   Image Position (Patient)
+        #   Image Position (Patient) --  also determines the spacing between slices
         series_tag_values["0020|0032"] = '\\'.join(map(str, img.TransformIndexToPhysicalPoint((0, 0, i))))
         #   Instance Number
         series_tag_values["0020|0013"] = str(i)
@@ -355,17 +384,16 @@ def write(img, dcm_dir, info, file_name_format='{:04}.dcm'):
         writer.Execute(image_slice)
 
 
-def anonymize(dcm_dir_in, dcm_dir_out, reset_origin=True, **anon_info):
+def anonymize(dcm_dir_in, dcm_dir_out, reset_origin=False, **anon_info):
     # anon_info can include study, subject, series, description, ...
     # program will try to understand those terms and assign to the correct tag
-    # those tags will override what is in dicom series in the returning dict
-    img, full_info = read(dcm_dir_in, return_info=True)
-    anon_info = Info(anon_info, check_keys=True)
-    full_info.update(anon_info)
+    img = read(dcm_dir_in, return_info=True)
+    info = img.info
+    img.info = Info(anon_info, check_keys=True)
     if reset_origin:
         img.SetOrigin((0.0, 0.0, 0.0))
-    write(img, dcm_dir_out, anon_info)
-    return full_info
+    write(img, dcm_dir_out)
+    return info
 
 
 def close_enough(d1, d2, *kwargs):
@@ -379,12 +407,4 @@ def close_enough(d1, d2, *kwargs):
     return equality
 
 
-# kwargs
-# file equality
-# value equality
-# value equality up to scale and shift
-
-
-if not __name__ == '__main__':
-    Dictionary = Dictionary()
-
+Dictionary = Dictionary()
