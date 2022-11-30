@@ -1,17 +1,24 @@
-import rarfile, shutil, os, glob
-import numpy as np
+import rarfile, shutil, os, json, pandas
 import open3d as o3d
-import trimesh
-from tkinter import messagebox
-import tkinter
 from datetime import datetime as dt
-tkinter.Tk().withdraw()
 
 
 class CASS(rarfile.RarFile):
 
-    def model_names(file, print_names=True):
-        with file.open('Three_Data_Info.bin') as f:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        setattr(self, 'temp_dir', rf'c:\_temp_cass\{dt.now().__str__()}'.replace(' ','-').replace(':','').split('.',1)[0])
+        os.makedirs(self.temp_dir, exist_ok=False)
+
+
+    def close(self, *args, **kwargs):
+        super().close()
+        if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir)
+
+
+    def model_names(self, print_names=True):
+        with self.open('Three_Data_Info.bin') as f:
             t = f.read().decode("utf-8").strip(';').split(';')
             names = [x.split(',')[0] for x in t[1:]]
             assert t[0] == str(len(names))
@@ -21,10 +28,8 @@ class CASS(rarfile.RarFile):
             return names
 
 
-    def models(file, names=[], dest_dir=None, override=True):
-        all_model_names = file.model_names(print_names=False)
-        temp_dir = rf'c:\_temp\{dt.now().__str__()}'.replace(' ','-').replace(':','').split('.',1)[0]
-        os.makedirs(temp_dir, exist_ok=True)
+    def models(self, names=[], dest_dir=None, override=True):
+        all_model_names = self.model_names(print_names=False)
         if dest_dir is None:
             result = []
         else:
@@ -40,7 +45,7 @@ class CASS(rarfile.RarFile):
             if m in all_model_names:
                 id = all_model_names.index(m)
             else:
-                file.model_names(print_names=True)
+                self.model_names(print_names=True)
                 id = input(f'type in index to replace \'{m}\':\n')
                 try:
                     id = int(id)
@@ -51,57 +56,89 @@ class CASS(rarfile.RarFile):
                     print(f'skipping {m}')
 
             stl_name = str(id) + '.stl'
-            file.extract(stl_name, temp_dir)
+            self.extract(stl_name, self.temp_dir)
             if dest_dir is None:
-                result.append(o3d.io.read_triangle_mesh(os.path.join(temp_dir, stl_name)))
+                result.append(o3d.io.read_triangle_mesh(os.path.join(self.temp_dir, stl_name)))
             else:
-                shutil.move(os.path.join(temp_dir, stl_name), dest)
+                shutil.move(os.path.join(self.temp_dir, stl_name), dest)
                 print(f'{m} found and copied')
-        shutil.rmtree(temp_dir)
         return result
 
 
-    def landmarks(file, index=[]):
-        with file.open('Measure_Data_Info_new.bin') as f:
+    def landmarks(self, translate=True, return_unknown=False):
+        with self.open('Measure_Data_Info_new.bin') as f:
             t = f.read().decode("utf-8").strip(';').split(';')
-            lmk = {}
-            for xx in [x.split(',') for x in t]:
-                id = int(xx[0])
-                if id in index:
-                    lmk[id] = np.array(xx[-3:], dtype=float)
+            lmk = [x.split(',') for x in t]
+            lmk = {int(l[0]):tuple(map(float,l[-3:])) for l in lmk}
+            assert len(lmk)==len(t)
+
+        if not translate:
+            return lmk
+
+        index = {}
+        if os.path.exists('cass_landmark_index.json'):
+            with open('cass_landmark_index.json','r') as f:
+                index = json.loads(f.read())
+                index = {int(k):v for k,v in index.items()}
+
+        keys = list(lmk.keys())
+        unknown = {}
+        zeros = {}
+        for l in keys:
+            if not any(lmk[l]):
+                zeros[l] = lmk.pop(l)
+                continue
+            if l in index:
+                lmk[index[l]] = lmk.pop(l)
+                # print(f'{l:>10}    -> {index[l]:>10}   {lmk_copy[index[l]]}') # for debugging
+            else:
+                unknown[l] = lmk.pop(l)
+        
+        # print stats
+        print(f'{len(lmk):>5}    known landmarks')
+        if len(zeros):
+            print(f'{len(zeros):>5}    zeros\n  {zeros}')
+        if len(unknown):
+            print(f'{len(unknown):>5}    unknown indices\n           {list(unknown.keys())}')
+
+        if return_unknown:
+            unknown.update(zeros)
+            return lmk, unknown
+        else:
             return lmk
             
 
+    # for maintaining a dictionary of landmark indices found in CASS files
+    # different versions of database result in different dictionaries
+    def update_landmark_index(self, xlsx, dictionary): # current_index: index:label
+        index = {}
+        if os.path.exists(dictionary):
+            with open(dictionary,'r') as f:
+                index = json.loads(f.read())
+                index = {int(k):v for k,v in index.items()}
 
-def job_20221118(CASS_file, dst_dir):
-    subj = os.path.basename(CASS_file)[:-5]
-    print(subj)
-    dst_dir = os.path.join(dst_dir, subj)
-    f = open_cass(CASS_file)
-    extract_stl(f, ['Skull (whole)', 'Mandible (whole)', 'CT Soft Tissue'], dst_dir)
-    lmk = extract_lmk(f, {10:'Gb',112:'Go-R',113:'Go-L',158:'C'})
-    if any([x is None for x in lmk.values()]):
-        print('abort, incomplete landmark')
-        return
-    skin = o3d.io.read_triangle_mesh(os.path.join(dst_dir, 'CT Soft Tissue.stl'))
-    Go_mid = (lmk[112]+lmk[113])/2
-    v = np.cross((lmk[158]-Go_mid),[1.,0.,0.])
-    v = v/(v**2).sum()**.5
-    vtx, fcs = np.asarray(skin.vertices), np.asarray(skin.triangles)
-    vtx, fcs = trimesh.intersections.slice_faces_plane(vertices=vtx, faces=fcs, plane_normal=np.asarray([0,0,-1]), plane_origin=lmk[10])
-    vtx, fcs = trimesh.intersections.slice_faces_plane(vertices=vtx, faces=fcs, plane_normal=np.asarray([0,-1,0]), plane_origin=Go_mid)
-    vtx, fcs = trimesh.intersections.slice_faces_plane(vertices=vtx, faces=fcs, plane_normal=v, plane_origin=Go_mid)
-    skin = o3d.geometry.TriangleMesh(
-        vertices=o3d.utility.Vector3dVector(vtx),
-        triangles=o3d.utility.Vector3iVector(fcs),
-    ).compute_vertex_normals()
+        lmk = self.landmarks(translate=False)
 
-    o3d.visualization.draw_geometries([skin])
+        xlsx = pandas.read_excel(xlsx, header=0).values
+        xlsx[1:,1:] += xlsx[0:1,1:] # landmark offset
+        lmk183 = {l[0]:l[1:].tolist() for l in xlsx[1:]}
 
-    if messagebox.askyesno(title='', message='Save (override) this surface?'):
-        o3d.io.write_triangle_mesh(os.path.join(dst_dir, 'CT Soft Tissue.stl'), skin)
+        isequal = lambda x,y: bool(x*y) and round(x,1)==round(y,1)
 
-if __name__ == '__main__':
-    # for f in glob.glob(r'C:\data\normal_ct_anon\*.CASS'):
-    #     job_20221118(f, r'C:\data\NCT')
-    job_20221118(r'C:\data\normal_ct_anon\SH001.CASS', r'C:\data\NCT')
+        for l1,k1 in lmk.items():
+            for l2,k2 in lmk183.items():
+                if all(map(isequal, k1, k2)):
+                    if l1 in index:
+                        print(f'{l1:>5}    known to be {index[l1]:>10}')
+                        assert index[l1] == l2, f'MISMATCH: {l1} -> {l2}'
+                    else:
+                        print(f'{l1:>5}    found to be {l2:>10}')
+                        index[l1] = l2
+
+        print(f'{len(index):>5}    known indices')
+        
+        with open('cass_landmark_index.json','w') as f:
+            f.write(json.dumps(index))
+
+        return index
+                        
