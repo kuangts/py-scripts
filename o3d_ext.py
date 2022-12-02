@@ -4,57 +4,66 @@ import open3d as o3d
 import trimesh
 from CASS import CASS
 
-def remove_hidden_points(mesh_o3d):
+class MyTriangleMesh(o3d.cpu.pybind.geometry.TriangleMesh):
 
-    # use a total of 26 points from various angles on bounding box to cast rays
-    # keep the hit triangles
 
-    m = mesh_o3d
-    triangles = np.asarray(m.triangles)
-    points = np.asarray(m.vertices)
-    points = points[triangles,:].mean(axis=1)
+    def remove_hidden_points(self):
 
-    aabb = m.get_axis_aligned_bounding_box()
-    bb_cen = aabb.get_center()
-    bb_ext = aabb.get_extent()
-    aabb = o3d.geometry.AxisAlignedBoundingBox(
-        min_bound=bb_cen-bb_ext,
-        max_bound=bb_cen+bb_ext) # enlarge the bound box 2 fold
+        # use a total of 26 points from various angles on bounding box to cast rays
+        # keep the hit triangles
 
-    # add eight corners, centers of six faces, and midpoints of 12 sides of the bounding box
-    # where rays are cast
+        triangles = np.asarray(self.triangles)
+        points = np.asarray(self.vertices)
+        points = points[triangles,:].mean(axis=1)
 
-    srcs = np.asarray(aabb.get_box_points())
-    srcs = { tuple((srcs[i]/2 + srcs[j]/2).round(6).tolist())\
-        for i in range(8) for j in range(8) if i <= j }
-    srcs.remove(tuple(aabb.get_center().round(6).tolist()))
+        aabb = self.get_axis_aligned_bounding_box()
+        bb_cen = aabb.get_center()
+        bb_ext = aabb.get_extent()
+        aabb = o3d.geometry.AxisAlignedBoundingBox(
+            min_bound=bb_cen-bb_ext,
+            max_bound=bb_cen+bb_ext) # enlarge the bound box 2 fold
 
-    # cast rays from these srcs to each triangle
+        # add eight corners, centers of six faces, and midpoints of 12 sides of the bounding box
+        # where rays are cast
 
-    rays = np.array(()).reshape(0,6)
-    for s in srcs:
-        ray_dir = points - s
-        ray_dir = ray_dir / np.sum(ray_dir**2, axis=1, keepdims=True)**.5
-        rays = np.vstack((rays, 
-            np.hstack((np.tile(s, (ray_dir.shape[0],1)), ray_dir))
-        ))
+        srcs = np.asarray(aabb.get_box_points())
+        srcs = { tuple((srcs[i]/2 + srcs[j]/2).round(6).tolist())\
+            for i in range(8) for j in range(8) if i <= j }
+        srcs.remove(tuple(aabb.get_center().round(6).tolist()))
 
-    scene = o3d.t.geometry.RaycastingScene()
-    scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(m))
-    ids_hit = scene.cast_rays(o3d.core.Tensor(rays, dtype=o3d.core.Dtype.Float32))['primitive_ids'].numpy()
-    m.remove_triangles_by_index(np.setdiff1d(np.arange(len(m.triangles)), ids_hit))
+        # cast rays from these srcs to each triangle
 
-    return m
+        rays = np.array(()).reshape(0,6)
+        for s in srcs:
+            ray_dir = points - s
+            ray_dir = ray_dir / np.sum(ray_dir**2, axis=1, keepdims=True)**.5
+            rays = np.vstack((rays, 
+                np.hstack((np.tile(s, (ray_dir.shape[0],1)), ray_dir))
+            ))
 
-def cut_with_planes(mesh_o3d, normals, origins):
-    vtx, fcs = np.asarray(mesh_o3d.vertices), np.asarray(mesh_o3d.triangles)
-    for n,o in zip(normals, origins):
-        vtx, fcs = trimesh.intersections.slice_faces_plane(vertices=vtx, faces=fcs, plane_normal=n, plane_origin=o)
-    m = o3d.geometry.TriangleMesh(
-        vertices=o3d.utility.Vector3dVector(vtx),
-        triangles=o3d.utility.Vector3iVector(fcs),
-    )
-    return m
+        scene = o3d.t.geometry.RaycastingScene()
+        scene.add_triangles(o3d.t.geometry.TriangleMesh.from_legacy(self))
+        ids_hit = scene.cast_rays(o3d.core.Tensor(rays, dtype=o3d.core.Dtype.Float32))['primitive_ids'].numpy()
+        self.remove_triangles_by_index(np.setdiff1d(np.arange(len(self.triangles)), ids_hit))
+
+        return self
+
+    def cut_with_planes(self, normals, origins):
+        vtx, fcs = np.asarray(self.vertices), np.asarray(self.triangles)
+        for n,o in zip(normals, origins):
+            d = (vtx - o).dot(n)
+            fid = np.logical_or(np.all(d[fcs]>0, axis=1), np.all(d[fcs]<0, axis=1)) # intersected
+            faces_intersect = fcs[~fid,:]
+            nid = np.sign(d[faces_intersect])==np.sign(d[faces_intersect]).prod(axis=1, keepdims=True)
+            assert np.all(nid.sum(axis=1) == 1)
+            
+
+            vtx, fcs = trimesh.intersections.slice_faces_plane(vertices=vtx, faces=fcs, plane_normal=n, plane_origin=o)
+        m = o3d.geometry.TriangleMesh(
+            vertices=o3d.utility.Vector3dVector(vtx),
+            triangles=o3d.utility.Vector3iVector(fcs),
+        )
+        return m
 
 
 def job_20221129():

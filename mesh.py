@@ -156,7 +156,7 @@ class HexahedralMesh(_Base):
 		elif isinstance(NG, typing.Callable):
 			self.NG = NG(N,E)
 		else:
-			self.calculate_node_grid(grid_seed=grid_seed)
+			self.calculate_node_grid(seed=grid_seed)
 
 	@property
 	def N(self):
