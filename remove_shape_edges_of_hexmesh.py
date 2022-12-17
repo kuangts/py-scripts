@@ -102,6 +102,7 @@ def main(file):
     nodes = np.asarray(nodes4, dtype=float)[:,1:]
     elems9 = [elem.split(',') for elem in elems.strip().split('\n')]
     elems = np.asarray(elems9, dtype=int)[:,1:]-1
+    nodes_new = np.copy(nodes)
 
     # calculate grid
     seed = seed_grid(nodes, elems)
@@ -144,7 +145,7 @@ def main(file):
     edges = o3d.geometry.LineSet.create_from_triangle_mesh(s).paint_uniform_color([.2,.5,.2])
     o3d.visualization.draw_geometries([s, problem_edges, edges], mesh_show_back_face=True)
 
-    with open(os.path.splitext(file)[0]+'_new_edge.inp','w',newline='') as f:
+    with open(file,'w',newline='') as f:
 
         ndigit = int(np.ceil(np.log10(nodes_new.shape[0])))
         edigit = int(np.ceil(np.log10(elems.shape[0])))
@@ -159,10 +160,11 @@ def main(file):
         f.write('** MESH ELEMENTS\r\n** ')
         f.write(f'Total number of elements {elems.shape[0]}\r\n')
         f.write('*ELEMENT, TYPE=C3D8\r\n')
-        f.write('\n'.join(f'{i+1:>{edigit}}, '+', '.join( f'{xx:>{ndigit}}' for xx in x) for i,x in enumerate(elems)) + '\n')
+        f.write('\n'.join(f'{i+1:>{edigit}}, '+', '.join( f'{xx:>{ndigit}}' for xx in x) for i,x in enumerate(elems+1)) + '\n')
         f.write('*END ELEMENT\r\n')
         f.write('** End of Data')
 
 
 if __name__=='__main__':
-    main(r'C:\OneDrive\FEM Mesh Generation\Cases\n0007\hexmesh_open.inp')
+    main(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Daeseung\mesh\n0006\hexmesh_open.inp')
+    

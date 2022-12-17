@@ -51,10 +51,18 @@ class Plane(np.ndarray):
     def p(self): # closest point to origin on plane
         return Pointset(-self.n*self.d)
 
-    def __new__(cls, abcd):
-        abcd = np.asarray(abcd)
-        abcd = abcd/np.sum(abcd[:3]**2)**.5
-        return np.asarray(abcd).view(cls)
+    def __new__(cls, *args, **kwargs):
+        abcd = cls.__bases__[0].__new__(*args, **kwargs)
+        abcd = abcd.flatten()/np.sum(abcd.flat[:3]**2)**.5
+        return abcd.view(cls)
+
+    def reset(self, **kwargs):
+        if 'equation' in kwargs:
+            self[:] = kwargs['equation'].flatten()
+        elif 'normal' in kwargs:
+            if 'd' in kwargs:
+                pass
+            # not finished
 
     @classmethod
     def pca_fit(cls, points: "Pointset"):

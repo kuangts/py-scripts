@@ -10,89 +10,88 @@ class CASS(rarfile.RarFile):
         setattr(self, 'temp_dir', rf'c:\_temp_cass\{dt.now().__str__()}'.replace(' ','-').replace(':','').split('.',1)[0])
         os.makedirs(self.temp_dir, exist_ok=False)
 
+    def __enter__(self):
+        return super().__enter__()
+
+    def __exit__(self, typ, value, traceback):
+        self.close() 
+        return super().__exit__(typ, value, traceback) # super's close() called herein
 
     def close(self, *args, **kwargs):
-        super().close()
         if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
             shutil.rmtree(self.temp_dir)
 
+    @property
+    def model_names(self):
+        if not hasattr(self, '_model_names'):
+            with self.open('Three_Data_Info.bin') as f:
+                t = f.read().decode("utf-8").strip(';').split(';')
+                names = [x.split(',')[0] for x in t[1:]]
+                assert t[0] == str(len(names)), 'total number of models mismatch, possibly due to file corruption'
+                setattr(self, '_model_names', names)
+        return self._model_names
 
-    def model_names(self, print_names=True):
-        with self.open('Three_Data_Info.bin') as f:
-            t = f.read().decode("utf-8").strip(';').split(';')
-            names = [x.split(',')[0] for x in t[1:]]
-            assert t[0] == str(len(names))
-            if print_names:
-                for i,n in enumerate(names):
-                    print(f'{i:>5} - {n}')
-            return names
+    def print_model_names(self):
+        for i,n in enumerate(self.model_names):
+            print(f'{i:>5} - {n}')
 
+    def select_model(self):
+        self.print_model_names()
+        id = input(f'type index to select model: ')
+        try:
+            id = int(id)
+            print(f'\r{id:>5} - {self.model_names[id]} selected')
+        except:
+            raise ValueError('invalid input')
+        assert id < len(self.model_names), 'outside the range'
+        return id
 
-    def models(self, names=[], dest_dir=None, override=True):
-        all_model_names = self.model_names(print_names=False)
+    def copy_model(self, name, dest_dir=None, override=True):
         if dest_dir is None:
-            result = []
-        else:
-            os.makedirs(dest_dir, exist_ok=True)
-            result = None
+            dest_dir = self.temp_dir
+        os.makedirs(dest_dir, exist_ok=True)
+        dest = os.path.join(dest_dir, name+'.stl')
+        if not override and os.path.isfile(dest):
+            print(f'{dest} exists, skipped')
+        id = self.model_names.index(name)            
+        stl_name = str(id) + '.stl'
+        self.extract(stl_name, dest_dir)
+        shutil.move(os.path.join(dest_dir, stl_name), dest)
 
-        for m in names:
-            if dest_dir is not None:
-                dest = os.path.join(dest_dir, m+'.stl')
-                if not override and os.path.isfile(dest):
-                    print(f'{dest} exists, skipped')
-                    continue
-            if m in all_model_names:
-                id = all_model_names.index(m)
-            else:
-                self.model_names(print_names=True)
-                id = input(f'type in index to replace \'{m}\':\n')
-                try:
-                    id = int(id)
-                    m = all_model_names[id]                    
-                except Exception as e:
-                    print(e)
-                    result.append(None)
-                    print(f'skipping {m}')
+    def model(self, name):
+        self.copy_model(name, override=False)
+        s = o3d.io.read_triangle_mesh(os.path.join(self.temp_dir, name+'.stl'))
+        s.remove_duplicated_vertices()
+        s.remove_unreferenced_vertices()
+        return s
 
-            stl_name = str(id) + '.stl'
-            self.extract(stl_name, self.temp_dir)
-            if dest_dir is None:
-                result.append(o3d.io.read_triangle_mesh(os.path.join(self.temp_dir, stl_name)))
-            else:
-                shutil.move(os.path.join(self.temp_dir, stl_name), dest)
-                print(f'{m} found and copied')
-        return result
-
-
-    def landmarks(self, translate=True, return_unknown=False):
+    def landmarks(self, dictionary='cass_landmark_index_nct.json', return_unknown=False):
         with self.open('Measure_Data_Info_new.bin') as f:
             t = f.read().decode("utf-8").strip(';').split(';')
             lmk = [x.split(',') for x in t]
             lmk = {int(l[0]):tuple(map(float,l[-3:])) for l in lmk}
             assert len(lmk)==len(t)
 
-        if not translate:
+        if not dictionary:
             return lmk
 
         index = {}
-        if os.path.exists('cass_landmark_index.json'):
-            with open('cass_landmark_index.json','r') as f:
-                index = json.loads(f.read())
-                index = {int(k):v for k,v in index.items()}
+        with open(dictionary,'r') as f:
+            index = json.loads(f.read())
+            index = {int(k):v for k,v in index.items()}
 
         keys = list(lmk.keys())
         unknown = {}
         zeros = {}
-        for l in keys:
-            if not any(lmk[l]):
-                zeros[l] = lmk.pop(l)
+        for k in keys:
+            if not any(lmk[k]):
+                zeros[k] = lmk.pop(k)
                 continue
-            if l in index:
-                lmk[index[l]] = lmk.pop(l)
+            if k in index:
+                lmk[index[k]] = lmk.pop(k)
                 # print(f'{l:>10}    -> {index[l]:>10}   {lmk_copy[index[l]]}') # for debugging
             else:
-                unknown[l] = lmk.pop(l)
+                unknown[k] = lmk.pop(k)
         
         # print stats
         print(f'{len(lmk):>5}    known landmarks')
@@ -110,23 +109,25 @@ class CASS(rarfile.RarFile):
 
     # for maintaining a dictionary of landmark indices found in CASS files
     # different versions of database result in different dictionaries
-    def update_landmark_index(self, xlsx, dictionary): # current_index: index:label
+    # check all landmarks coordinates are correct in AnatomicAligner
+    # run this function with xlsx file exported from AnatomicAligner
+    def update_landmark_index(self, xlsx_file, dictionary):
         index = {}
         if os.path.exists(dictionary):
             with open(dictionary,'r') as f:
                 index = json.loads(f.read())
                 index = {int(k):v for k,v in index.items()}
 
-        lmk = self.landmarks(translate=False)
+        lmk = self.landmarks(dictionary='')
 
-        xlsx = pandas.read_excel(xlsx, header=0).values
+        xlsx = pandas.read_excel(xlsx_file, header=0).values
         xlsx[1:,1:] += xlsx[0:1,1:] # landmark offset
-        lmk183 = {l[0]:l[1:].tolist() for l in xlsx[1:]}
+        lmkxlsx = {l[0]:l[1:].tolist() for l in xlsx[1:]}
 
         isequal = lambda x,y: bool(x*y) and round(x,1)==round(y,1)
 
         for l1,k1 in lmk.items():
-            for l2,k2 in lmk183.items():
+            for l2,k2 in lmkxlsx.items():
                 if all(map(isequal, k1, k2)):
                     if l1 in index:
                         print(f'{l1:>5}    known to be {index[l1]:>10}')
@@ -137,7 +138,7 @@ class CASS(rarfile.RarFile):
 
         print(f'{len(index):>5}    known indices')
         
-        with open('cass_landmark_index.json','w') as f:
+        with open(dictionary,'w') as f:
             f.write(json.dumps(index))
 
         return index
