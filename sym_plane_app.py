@@ -8,6 +8,7 @@ import open3d as o3d
 import open3d.visualization.gui as gui
 import open3d.visualization.rendering as rendering
 import pyvista
+import pyperclip
 
 def get_material(mat_name):
 
@@ -494,6 +495,9 @@ class AppWindow:
 
     def _on_save_dialog_done(self, filename):
         self.window.close_dialog()
+        pyperclip.copy('The text to be copied to the clipboard.')
+        spam = pyperclip.paste()
+    
         try:
             T = self._scene.scene.get_geometry_transform('__MIRRORED__')
             with open(filename, 'w') as f:
