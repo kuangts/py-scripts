@@ -110,64 +110,34 @@ class AppWindow:
             self._scene.scene.show_geometry('__MIRRORED__', True)
 
     def _on_key(self, event):
-        if event.type == gui.KeyEvent.Type.DOWN and event.key == 32:
+        if self._scene.scene.has_geometry('__PLANE__') \
+            and event.type == gui.KeyEvent.Type.DOWN \
+            and event.key == 32:
             self.mode = self.mode.switch()
             return gui.Widget.EventCallbackResult.CONSUMED
         return gui.Widget.EventCallbackResult.IGNORED
-
-    def _on_mouse(self, event):
-        if event.is_button_down(o3d.visualization.gui.MouseButton.LEFT):
-            view_mat = self._scene.scene.camera.get_view_matrix()
-            proj_mat = self._scene.scene.camera.get_projection_matrix()
-            modl_mat = self._scene.scene.camera.get_model_matrix()
-
-            # print(view_mat.round(6))
-            # print(proj_mat.round(6))
-            # print(modl_mat.round(6))
-
-            # print((view_mat@modl_mat).round(6))
-            # print((modl_mat@view_mat).round(6))
-
-        # pass on viewing mode
-        if self.mode==self.Mode.View:
+    
+    def _post_mouse(self, event):
+        # ignore if in viewing mode or if model not loaded
+        if self.mode==self.Mode.View or not self._scene.scene.has_geometry('__PLANE__'):
             return gui.Widget.EventCallbackResult.IGNORED
-        # pass on model not loaded
-        if not self._scene.scene.has_geometry('__PLANE__'):
-            for l in self._trans_list:
-                l.text = ' '.join(['...n/a...']*4)
-            return gui.Widget.EventCallbackResult.HANDLED
 
-        # t = self._scene.center_of_rotation
-        # T0 = np.eye(4)
-        # T1 = np.eye(4)
-        # T0[:-1,-1] = -t[:]
-        # T1[:-1,-1] = t[:]
-        # T = T1 @ T @ T0
-
-        # for l,x in zip(self._trans_list,T):
-        #     l.text = ' '.join(f'{i:+0.2e}' for i in x)
-
-
-        if self.mode == self.Mode.Plane and event.type == gui.MouseEvent.Type.DRAG:
-            pass
-
-
-
+        T = self.get_reflection()
+        self._scene.scene.set_geometry_transform('__MIRRORED__', T)
+        self._scene.scene.set_geometry_transform('__MESH__', np.eye(4))
+        for l,x in zip(self._trans_list,T):
+            l.text = ' '.join(f'{i:+0.2e}' for i in x)
 
         # layout window once button is up
         if event.type == gui.MouseEvent.Type.BUTTON_UP:
-            pln = self.get_plane_equation()
-            T = np.eye(4) - 2 * np.array([[*pln[:-1],0]]).T @ pln[None,:]
-            self._scene.scene.set_geometry_transform('__MIRRORED__', T)
-            self._scene.scene.set_geometry_transform('__MESH__', np.eye(4))
             self.window.set_needs_layout()
+        
         return gui.Widget.EventCallbackResult.HANDLED
-
 
     def color_mesh_distance(self):
         if not self._scene.scene.has_geometry('__PLANE__'):
             return
-        pln = self.get_plane_equation()
+        pln = self.get_plane()
         T = np.eye(4) - 2 * np.array([[*pln[:-1],0]]).T @ pln[None,:]
         vtk_faces = lambda f: np.hstack((np.tile(3,(f.shape[0],1)), f.astype(int))).flatten()
         h1 = o3d.geometry.TriangleMesh(self.mesh_mirrored).transform(T)
@@ -182,17 +152,18 @@ class AppWindow:
         self.mesh.vertex_colors = o3d.utility.Vector3dVector(cmap[(d/10*99).astype(int)])
         self._scene.scene.scene.update_geometry('__MESH__', self.mesh, o3d.visualization.rendering.Scene.UPDATE_COLORS_FLAG)
 
-    def get_plane_equation(self):
-        if self._scene.scene.has_geometry('__PLANE__'):
-            T = self._scene.scene.get_geometry_transform('__PLANE__')
-            center = np.asarray(self.plane.vertices).mean(axis=0) 
-            center = (T @ np.asarray([[*center, 1]]).T).flat[:-1]
-            vtx = np.asarray(self.plane.vertices)
-            normal = (T @ np.asarray([[*(vtx[1]-vtx[0]),0.]]).T).flat[:-1]
-            pln = np.array([ *normal, -center.dot(normal) ])
-            return pln
-        return None
+    def get_plane(self):
+        T = self._scene.scene.get_geometry_transform('__PLANE__')
+        vtx = np.asarray(self.plane.vertices)
+        center = (T @ np.asarray([[*vtx.mean(axis=0), 1]]).T).flat[:-1]
+        normal = (T @ np.asarray([[*(vtx[1]-vtx[0]),0.]]).T).flat[:-1]
+        pln = np.array([ *normal, -center.dot(normal) ])
+        return pln
 
+    def get_reflection(self, plane=None):
+        pln = self.get_plane() if plane is None else plane.flatten()
+        T = np.eye(4) - 2 * np.array([[*pln[:-1],0]]).T @ pln[None,:]
+        return T
 
     def load(self, path):
         self._scene.scene.clear_geometry()
@@ -283,7 +254,7 @@ class AppWindow:
         # 3D widget
         self._scene = gui.SceneWidget()
         self._scene.scene = rendering.Open3DScene(w.renderer)
-        self._scene.set_on_mouse(self._on_mouse)
+        self._scene.set_post_mouse(self._post_mouse)
         self._scene.set_on_key(self._on_key)
         # ---- Settings panel ----
         # Rather than specifying sizes in pixels, which may vary in size based
@@ -531,7 +502,7 @@ if __name__ == "__main__":
             w.window.show_message_box("Error",
                                       "Could not open file '" + path + "'")
 
-    w.load(r'C:\data\chest\soft tissue_low.stl')
+    w.load(r'C:\Users\xiapc\Desktop\p4\skin_smooth_3mm.stl')
 
     # Run the event loop. This will not return until the last window is closed.
     gui.Application.instance.run()
