@@ -117,28 +117,24 @@ class AppWindow:
             return gui.Widget.EventCallbackResult.CONSUMED
         return gui.Widget.EventCallbackResult.IGNORED
     
-    def _post_mouse(self, event):
-        # ignore if in viewing mode or if model not loaded
-        if self.mode==self.Mode.View or not self._scene.scene.has_geometry('__PLANE__'):
-            return gui.Widget.EventCallbackResult.IGNORED
 
+    def _post_mouse(self, event):
+        # pass on viewing mode
+        if self.mode==self.Mode.View:
+            return gui.Widget.EventCallbackResult.IGNORED
         T = self.get_reflection()
         self._scene.scene.set_geometry_transform('__MIRRORED__', T)
         self._scene.scene.set_geometry_transform('__MESH__', np.eye(4))
         for l,x in zip(self._trans_list,T):
             l.text = ' '.join(f'{i:+0.2e}' for i in x)
-
-        # layout window once button is up
         if event.type == gui.MouseEvent.Type.BUTTON_UP:
             self.window.set_needs_layout()
-        
         return gui.Widget.EventCallbackResult.HANDLED
 
     def color_mesh_distance(self):
         if not self._scene.scene.has_geometry('__PLANE__'):
             return
-        pln = self.get_plane()
-        T = np.eye(4) - 2 * np.array([[*pln[:-1],0]]).T @ pln[None,:]
+        T = self.get_reflection()
         vtk_faces = lambda f: np.hstack((np.tile(3,(f.shape[0],1)), f.astype(int))).flatten()
         h1 = o3d.geometry.TriangleMesh(self.mesh_mirrored).transform(T)
         h1 = pyvista.PolyData(np.asarray(h1.vertices), vtk_faces(np.asarray(h1.triangles)))
@@ -160,10 +156,12 @@ class AppWindow:
         pln = np.array([ *normal, -center.dot(normal) ])
         return pln
 
+
     def get_reflection(self, plane=None):
         pln = self.get_plane() if plane is None else plane.flatten()
         T = np.eye(4) - 2 * np.array([[*pln[:-1],0]]).T @ pln[None,:]
         return T
+
 
     def load(self, path):
         self._scene.scene.clear_geometry()
