@@ -114,7 +114,7 @@ def nicp(SRC, TAR, iterations=20):
         raise ValueError('wrong input to nicp')
     
     t1 = toc()
-    pace = 4/iterations # cut distance by this portion each iteration, in concept
+    pace = 1/5 # cut distance by this portion each iteration, in concept
     # from icp import icp # enable icp
     _, SRC, _ = icp(SRC, TAR) # initial icp registration
     SRC, TAR, v_src, vn_src = SRC.copy(), TAR.copy(), SRC.V.copy(), SRC.VN.copy()
