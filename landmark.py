@@ -1,80 +1,106 @@
-import os, sys, re, argparse, json
-import sqlite3
-import plotly
-from copy import deepcopy
-from math import isnan
-from collections import namedtuple
-from collections.abc import Sequence
-
-import rarfile, pandas
+import re, math, collections, sqlite3
 
 _nan = float('nan')
-_anynan = lambda x: any(map(isnan,x))
+_anynan = lambda x: any(map(math.isnan,x))
 db_location = r'C:\AA\AA.Release.GT\CASS.db'
-sf_location = r'C:\AA\AA.Release.GT\Tskin.stl'
-lib_item = namedtuple('ITEM',('ID','M','Category','Location','Name','Fullname','Description','Coordinate','View','DP'))
-
+Detached = { "S", "U0R", "U1R-R", "U1R-L", "L0R", "L1R-R", "L1R-L", "COR-R", "COR-L" }
 
 class Library(frozenset):
-    def __new__(cls, location=db_location):
-        with sqlite3.connect(location) as con:
-            # select all from table Landmark_Library
-            # unpack the resulting cursor object
-            # create item with each row of the table
-            # reference fields of each item with dot notation or indexing
-            # this library is an intermediate point programming-wise
-            lib = con.execute(f'SELECT * FROM Landmark_Library').fetchall()
-            cat = con.execute(f'SELECT * FROM Measure_Items').fetchall()
-            ana = con.execute(f'SELECT * FROM Analysis_Name').fetchall()
+    """
+    this class is to bridge landmark database (CASS.db) and landmark manipulation in python.
+    it provides simple functions for look-up and filter operations.
+    """
 
-        cat_names = {x[1]:x[2] for x in ana}
-        category = {}
-        for x in cat:
-            cat_id = cat_names[x[2]]
-            m_order = int(x[0])
-            if cat_id not in category:
-                category[cat_id] = {}
-            category[cat_id][m_order] = x[5]
-        del category['New GT']
-            
-        for i,x in enumerate(lib):
-            lib[i] = lib_item(
-                ID=int(x[0]),
-                M=int(x[1]),
-                Category=x[2],
-                Location=x[3],
-                Name=x[4],
-                Fullname=x[5],
-                Description=x[6],
-                Coordinate=(float(x[7]),float(x[8]),float(x[9])),
-                View=x[10],
-                DP=x[11],
+    # class for entries
+    Entry = collections.namedtuple('LDMK_ENTRY',('ID','M','Category','Group','Name','Fullname','Description','Coordinate','View','DP'))
+    setattr(Entry,'__repr__',lambda s: f'{s.Name} - {s.Group[3:]}')
+
+    def __new__(cls, db_location_or_existing_set=db_location):
+        if isinstance(db_location_or_existing_set, str): 
+            with sqlite3.connect(db_location_or_existing_set) as con:
+                # select all from table Landmark_Library
+                # unpack the resulting cursor object
+                # create item with each row of the table
+                # reference fields of each item with dot notation or tuple indexing
+                lib = con.execute(f'SELECT * FROM Landmark_Library').fetchall()
+                cat = con.execute(f'SELECT * FROM Measure_Items').fetchall()
+                ana = con.execute(f'SELECT * FROM Analysis_Name').fetchall()
+
+            # order and names of categories
+            cat_names = {x[1]:x[2] for x in ana}
+            category = {}
+
+            # order and landmarks within each category
+            for x in cat:
+                cat_id = cat_names[x[2]]
+                m_order = int(x[0])
+                if cat_id not in category:
+                    category[cat_id] = {}
+                category[cat_id][m_order] = x[5]
+            del category['New GT'] # because m_order has duplicates
+
+            # after assuring each landmark (lmk) belongs to one and only one group (grp)
+            lmk_group = {lmk:grp for grp, mem in category.items() for lmk in mem.values() if lmk }
+
+            # following items are the content of the library
+            items = [
+                cls.Entry(
+                    ID=int(x[0]),
+                    M=int(x[1]),
+                    Category=x[2],
+                    Group=lmk_group[x[4]],
+                    Name=x[4],
+                    Fullname=x[5],
+                    Description=x[6],
+                    Coordinate=(float(x[7]),float(x[8]),float(x[9])),
+                    View=x[10],
+                    DP=x[11],
                 )
-        obj = super().__new__(cls, lib)
-        setattr(obj, 'category', category)
+                for x in lib if x[4] in lmk_group # use only known landmarks
+            ]
+        else: # creating library from existing set, likely a subset of the full library
+            items = db_location_or_existing_set
+            assert all(isinstance(x, cls.Entry) for x in items), f'cannot create library with input {db_location_or_existing_set}'
+
+        obj = super().__new__(cls, items)
         return obj
 
-    def category(self, cat):
-        return self.filter(lambda x:x.Name in self.category[cat].values())
-
     def field(self, fieldname):
-        return tuple([getattr(x, fieldname) for x in self])
-
+        # extracts field or fields into list object
+        # if fieldname is given in a string, then the returned list has members of self.Entry instances
+        # if fieldname is given in a sequence, e.g. list, then each member is wrapped in a list as well
+        if isinstance(fieldname, str):
+            assert fieldname in self.Entry._fields, f'{fieldname} is invalid input'
+            return [getattr(x, fieldname) for x in self]
+        elif isinstance(fieldname, collections.abc.Sequence):
+            for f in fieldname:
+                assert f in self.Entry._fields, f'{f} is invalid input'
+            return [[getattr(x, f) for f in fieldname] for x in self]
+    
     def find(self, **kwargs):
+        # finds the first match of self.Entry instance
+        # or returns None is none is found
+        # use **kwargs to specify matching condition
+        # e.g. library.find(Name='Fz-R') will find entry x where x.Name=='Fz-R'
+        # e.g. library.find(Category='Skeletal') will find and return only the first skeletal landmark
+        # to find all matches, use filter instead: e.g. library.filter(lambda x: x.Category=='Skeletal')
         for x in self:
             if all(map(lambda a:getattr(x,a[0])==a[1], kwargs.items())):
                 return x
-        return None
 
-    def filter(self, callable_on_lib_item=lambda x:x.Name!=""):
-        return {x for x in self if callable_on_lib_item(x)}
+    def filter(self, callable_on_lib_entry=lambda x:x.Name!=""):
+        # returns subset of items matching criteria
+        # similar to in-built filter function
+        # takes a lambda which is applied onto library entries
+        # e.g. library.filter(lambda x: 'Fz' in x.Name) will find Fz-R and Fz-L
+        return self.__class__({x for x in self if callable_on_lib_entry(x)})
 
 
-class Landmark(dict):
+class LandmarkDict(dict):
     '''
     this is a convenience class for handling landmark files of various formats
-    use class instances exactly like a dictionary
-    be mindful of the data type put in - list and numpy.ndarray both works with the class
+    use exactly like a dictionary
+    be mindful of the data type put in - list and numpy.ndarray both work with the class
     '''
 
     @classmethod
@@ -87,11 +113,13 @@ class Landmark(dict):
     @classmethod
     def from_excel(cls, file):
         # read excel sheet with very specific format
+        import pandas
         V = pandas.read_excel(file, header=0, engine='openpyxl').values
         return cls(zip(V[1:,0], (V[1:,1:4]+V[0,1:4]).tolist()))
 
     @classmethod
     def from_cass(cls, file, interpret=True):
+        import rarfile
         with rarfile.RarFile(file) as f:
             with f.open('Measure_Data_Info_new.bin') as l:
                 t = l.read().decode("utf-8").strip(';').split(';')
@@ -132,9 +160,9 @@ class Landmark(dict):
         return list(self.keys())
 
     @classmethod
-    def parse(cls, lmk_str, header=None, separator='[,: ]+', line_ending='[;\n]+', nan_str={'N/A','n/a','NA','na','nan','NaN'}):        
+    def parse(cls, lmk_str, num_lines_header=None, separator='[,: ]+', line_ending='[;\n]+', nan_str={'N/A','n/a','NA','na','nan','NaN'}):        
         '''
-        `header` stores the number of lines before read data begins. it must be set if not `None` - automatic determination is not supported yet.
+        `num_lines_header` stores the number of lines before data begins. it must be set if not `None` - automatic determination is not supported yet.
         checks any combination of ';' and '\n' for line breaks
         checks any combination of ',', ':', and space for delimiter within each line
         detects if label is present
@@ -143,11 +171,10 @@ class Landmark(dict):
         '''
         lmk = cls()
 
-        # 'header' stores number of lines in the begining of file before data, might be different from pandas, perform n splits where n equals 'header'
-        if header:
-            lmk_str = lmk_str.split('\n', header) 
-            lmk.header = lmk_str[0:header]
-            lmk_str = lmk_str[-1]
+        # 'header' stores number of lines in the begining of file before data, might be different from pandas, performs n splits where n equals 'header'
+        if num_lines_header:
+            lmk_str = lmk_str.split('\n', num_lines_header) 
+            lmk.header, lmk_str = lmk_str[0:num_lines_header], lmk_str[-1]
 
             # regexp checks for patterns ';\n' or '\n' or ';' (in order given by a 'Sequence' of str), then splits at all occurrences 
 
@@ -177,13 +204,13 @@ class Landmark(dict):
 
     def string(self, nan_str='0.0', formatted=False, keep_label=True, keep_coordinate=True, header=None, separator=',', line_ending='\n'):
         '''
-        `header` stores the header content of the coming file, in a `list` or `str`. a `list` of three `str`s would correspond to three header lines. the default is `None`, no header. if set to `''`, it will try to write header using previous header if possible.
+        `header` specifies the header content of the coming file, in a `list` or `str`. a `list` of three `str`s would correspond to three header lines. the default is `None`, no header. if set to `''`, it will try to write header using previous header if possible.
         an nan value is written to file as `nan_str`. if `nan_str` is set to '0.0', then nan coordinates are written as '0.0, 0.0, 0.0', which is the default
-        if nan_str is '', all nan values are removed
+        if nan_str is '', all entries containing nan value(s) are removed
         '''
 
         # line_ending='\n' -> csv
-        # line_ending=';'  -> cass-readable
+        # line_ending=';'  -> cass-readable, not recommended -- read from cass file directly if possible, or if cass is saved with the latest db file.
         # line_ending=None -> do not join lines - returns list for further processing
 
         lmk = []
@@ -192,7 +219,7 @@ class Landmark(dict):
             header = ''
         else:
             header = header if header else self.header
-            header = '\n'.join(header if isinstance(header,Sequence) and not isinstance(header,str) else [header]) + '\n'
+            header = '\n'.join(header if isinstance(header, collections.abc.Sequence) and not isinstance(header,str) else [header]) + '\n'
         
         remove_nan = len(nan_str)==0
 
@@ -234,9 +261,9 @@ class Landmark(dict):
 
     def sort_by(self, ordered_labels):
         # select those labels, and order them, filling in nan if necessary
-        self_new_copy = deepcopy(self)
-        v = [self_new_copy.setdefault(o, [_nan]*3) for o in ordered_labels]
-        return self.__class__(zip(ordered_labels, v))
+        return self.__class__(
+            {label:([*self[label]] if label in self else [_nan]*3) for label in ordered_labels}
+        )
 
     def len(self, remove_nan=False):
         l = len(self)
@@ -302,15 +329,85 @@ class Landmark(dict):
             ind = d>threshold
             coords_new[ind] = self.coordinates[ind]
 
-        lmk = Landmark(zip(lmk.labels, coords_new))
+        lmk = LandmarkDict(zip(lmk.labels, coords_new))
         lmk.update(lmk_not_moved['Detached'])
 
         return lmk
+
 
 try:
     library = Library()
 except Exception as e:
     print(f'landmark library is not loaded\n{e}')
+
+from vtkmodules.vtkFiltersSources import vtkSphereSource 
+from vtkmodules.vtkRenderingCore import vtkBillboardTextActor3D
+from vtkmodules.vtkRenderingCore import vtkActor, vtkPolyDataMapper
+
+class vtkLandmark:
+
+    Color = (1,0,0)
+    HighlightColor = (0,1,0)
+
+    def __init__(self, label, coord=(0,0,0), **kwargs):
+        for k,v in kwargs.items():
+            setattr(self, k, v)
+        src = vtkSphereSource()
+        src.SetCenter(*coord)
+        src.SetRadius(1)
+        map = vtkPolyDataMapper()
+        map.SetInputConnection(src.GetOutputPort())
+        act = vtkActor()
+        act.SetMapper(map)
+        act.GetProperty().SetColor(*self.Color)
+        txt = vtkBillboardTextActor3D()
+        txt.SetPosition(*coord)
+        txt.SetInput(label)
+        txt.GetTextProperty().SetFontSize(24)
+        txt.GetTextProperty().SetJustificationToCentered()
+        txt.GetTextProperty().SetColor(*self.Color)
+        txt.PickableOff()
+
+        self.sphere = src
+        self.sphere_actor = act
+        self.label_actor = txt
+        self.sphere_actor.prop_name = 'ldmk'
+        self.sphere_actor.parent = self
+
+    @property
+    def label(self):
+        return self.label_actor.GetInput()
+
+    @classmethod
+    def SetColor(cls, *new_color):
+        cls.Color = new_color
+
+    @classmethod
+    def SetHighlightColor(cls, *new_color):
+        cls.HighlightColor = new_color
+
+    def MoveTo(self, new_coord):
+        self.sphere.SetCenter(*new_coord)
+        self.sphere.Update()
+        self.label_actor.SetPosition(*new_coord)
+
+    def SetRenderer(self, ren):
+        self.renderer = ren
+        ren.AddActor(self.sphere_actor)
+        ren.AddActor(self.label_actor)
+
+    def Remove(self):
+        self.renderer.RemoveActor(self.sphere_actor)
+        self.renderer.RemoveActor(self.label_actor)
+        del self.sphere_actor, self.label_actor, self.sphere
+
+    def Select(self):
+        self.sphere_actor.GetProperty().SetColor(*self.HighlightColor)
+        self.label_actor.GetTextProperty().SetColor(*self.HighlightColor)
+
+    def Deselect(self):
+        self.sphere_actor.GetProperty().SetColor(*self.Color)
+        self.label_actor.GetTextProperty().SetColor(*self.Color)
 
 
 # if __name__=='__main__':
