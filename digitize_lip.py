@@ -1,4 +1,5 @@
-import sys, os, csv, glob
+import os, csv
+from itertools import chain
 from vtk import vtkMatrix4x4
 from vtkmodules.vtkFiltersSources import vtkSphereSource 
 from vtkmodules.vtkCommonColor import vtkNamedColors
@@ -30,61 +31,43 @@ labels = [
 ]
 
 
+class LandmarkActor(vtkActor):
+    def __init__(self, label, coord):
+        super().__init__()
+        self.source = vtkSphereSource()
+        self.source.SetCenter(coord)
+        self.source.SetRadius(1)
+        self.mapper = vtkPolyDataMapper()
+        self.mapper.SetInputConnection(self.source.GetOutputPort())
+        self.SetMapper(self.mapper)
+        self.GetProperty().SetColor(colors.GetColor3d('Green'))
+        self.GetProperty().SetPointSize(10)
+        self.label = label
+        self.coord = coord
 
-class MouseInteractorStyle(vtkInteractorStyleTrackballCamera):
+    def Select(self):
+        self.GetProperty().SetColor(colors.GetColor3d('Green'))
+        self.mapper.Update()
 
-    def __init__(self, digitizer):
-        self.controller = digitizer
-        self.should_add_lmk = True # flag for dragging
-        self.AddObserver('LeftButtonPressEvent', self.left_button_press_event)
-        self.AddObserver('LeftButtonReleaseEvent', self.left_button_release_event)
-        self.AddObserver('MouseMoveEvent', self.mouse_move)
-        self.AddObserver('KeyPressEvent', self.key_press_event)
+    def Deselect(self):
+        self.GetProperty().SetColor(colors.GetColor3d('Tomato'))
+        self.mapper.Update()
 
+    @property
+    def coord(self):
+        return self.source.GetCenter()
 
-    def key_press_event(self, obj, event):
-        key = self.GetInteractor().GetKeySym()
-        # print(key)
-        if key=='space':
-            self.controller.next()
-        elif key=='r':
-            self.controller.load(self.controller.reader.GetFileName())
-        elif key=='Return':
-            self.controller.load()
-        elif key=='BackSpace':
-            self.controller.remove_lmk()
-
-    # Catch mouse events
-    def left_button_press_event(self, obj, event):
-        self.should_add_lmk = True
-        # Forward events
-        self.OnLeftButtonDown()
-
-    def mouse_move(self, obj, event):
-        self.should_add_lmk = False
-        super().OnMouseMove()
-
-    def left_button_release_event(self, obj, event):
-        if self.should_add_lmk:
-            # Get the location of the click (in window coordinates)
-            pos = self.GetInteractor().GetEventPosition()
-            picker = vtkCellPicker()
-            picker.SetTolerance(0.0005)
-            # Pick from this location.
-            picker.Pick(pos[0], pos[1], 0, self.GetDefaultRenderer())
-            if picker.GetCellId() != -1:
-                self.controller.add_lmk(picker.GetPickPosition())
-        # Forward events
-        self.should_add_lmk = True
-        self.OnLeftButtonUp()
-
-
+    @coord.setter
+    def coord(self, _c):
+        self.source.SetCenter(_c)
+        self.mapper.Update()
 
 
 class Digitizer():
 
-    def __init__(self, man):
-        self.manager = man
+    def __init__(self):
+        self.lmk = []
+        self.docket = []
         global colors
         colors = vtkNamedColors()
 
@@ -103,9 +86,7 @@ class Digitizer():
         back_prop.SetDiffuseColor(colors.GetColor3d('peachpuff3'))
         skin.SetBackfaceProperty(back_prop)
 
-
         # create window and render
-        global renderer, ren_win, iren, style
         renderer = vtkRenderer()
         renderer.SetBackground(colors.GetColor3d('paleturquoise'))
         ren_win = vtkRenderWindow()
@@ -114,20 +95,18 @@ class Digitizer():
         ren_win.SetWindowName('Lip Landmarks')
         iren = vtkRenderWindowInteractor()
         iren.SetRenderWindow(ren_win)
-        style = MouseInteractorStyle(self)
+        style = vtkInteractorStyleTrackballCamera()
         style.SetDefaultRenderer(renderer)
         iren.SetInteractorStyle(style)
         renderer.AddActor(skin)
 
-        '''
-        vtkNew<vtkTextActor> textActor;
-        textActor->SetInput("Hello world");
-        textActor->SetPosition2(10, 40);
-        textActor->GetTextProperty()->SetFontSize(24);
-        textActor->GetTextProperty()->SetColor(colors->GetColor3d("Gold").GetData());
-        renderer->AddActor2D(textActor);
+        # Interactor callbacks
+        style.rotated = False # flag for dragging
+        style.AddObserver('LeftButtonPressEvent', self.left_button_press_event)
+        style.AddObserver('LeftButtonReleaseEvent', self.left_button_release_event)
+        style.AddObserver('MouseMoveEvent', self.mouse_move_event)
+        style.AddObserver('KeyPressEvent', self.key_press_event)
 
-        '''
         status = vtkTextActor()
         status.SetPosition2(10, 40)
         status.GetTextProperty().SetFontSize(16)
@@ -135,10 +114,10 @@ class Digitizer():
         renderer.AddActor2D(status)
 
         self.reader = reader
-        self.lmk = {}
         self.ren_win = ren_win
         self.iren = iren
         self.status = status
+        self.renderer = renderer
 
     def start(self):
         self.ren_win.Render()
@@ -150,134 +129,170 @@ class Digitizer():
         self.iren.TerminateApp()
         del self.ren_win, self.iren
 
+    # Interactor callbacks
+    def key_press_event(self, obj, key):
+        key = obj.GetInteractor().GetKeySym()
+        print(key)
+        if key=='space':
+            self.next_lmk()
+        elif key=='r':
+            self.load()
+        elif key=='Return':
+            self.next_case()
+        elif key=='d' or key=='Delete':
+            self.del_lmk()
+        elif key=='BackSpace':
+            self.previous_lmk()
+        elif key=='s':
+            self.save()
+
+    def left_button_press_event(self, obj, event):
+        obj.rotated = False
+        obj.OnLeftButtonDown()
+
+    def mouse_move_event(self, obj, event):
+        obj.rotated = True
+        obj.OnMouseMove()
+
+    def left_button_release_event(self, obj, event):
+        # Get the location of the click (in window coordinates)
+        if not obj.rotated:
+            pos = obj.GetInteractor().GetEventPosition()
+            picker = vtkCellPicker()
+            picker.SetTolerance(0.0005)
+            # Pick from this location.
+            picker.Pick(pos[0], pos[1], 0, obj.GetDefaultRenderer())
+            points = picker.GetPickedPositions()
+            actors = picker.GetActors()
+            for i in range(points.GetNumberOfPoints()):
+                actor = actors.GetItemAsObject(i)
+                if actor not in self.lmk:
+                    self.add_lmk(points.GetPoint(i))
+                    break
+        obj.OnLeftButtonUp()
+
+    def refresh(self, text=None):
+        if text is None:
+            text = '\n'.join((self.current_case, self.print_lmk(self.current_label)))
+        self.status.SetInput(text)
+        self.ren_win.Render()
+
     def print_lmk(self, label=None, coord=None):
         if label is None:
-            for k,v in self.lmk.items():
-                self.print_lmk(k,v)
+            return '\n'.join(self.print_lmk(x.label, x.coord) for x in self.lmk)
         elif coord is None:
-            coord = self.lmk[label] if label in self.lmk else 'not digitized'
-            self.print_lmk(label, coord)
+            lmk = self.get_lmk(self.current_label)
+            if lmk:
+                return self.print_lmk(lmk.label, lmk.coord)
+            else:
+                return f'{label} not digitized'
         else:
-            print(f'{label:>10}: {coord}')
+            return f'{label:>10}: {[round(x,3) for x in coord]}'
+
+    def get_lmk(self, label):
+        acts = list(filter(lambda x:x.label==label, self.lmk))
+        if acts:
+            return acts[0]
+        else:
+            return None
 
     def add_lmk(self, coord):
-        l = self.manager.current_label
-        self.print_lmk(l, coord)
-        if l in self.lmk:
-            self.lmk[l]['coord'] = coord
-            self.lmk[l]['source'].SetCenter(coord)
-            self.lmk[l]['source'].Update()
+        lmk = self.get_lmk(self.current_label)
+        if lmk:
+            lmk.coord = coord
         else:
-            self.lmk[l] = {}
-            src = vtkSphereSource()
-            src.SetCenter(coord)
-            src.SetRadius(1)
-            map = vtkPolyDataMapper()
-            map.SetInputConnection(src.GetOutputPort())
-            act = vtkActor()
-            act.SetMapper(map)
-            act.GetProperty().SetColor(colors.GetColor3d('Tomato'))
-            act.GetProperty().SetPointSize(10)
-            renderer.AddActor(act)
+            lmk = LandmarkActor(self.current_label, coord)
+            self.lmk.append(lmk)
+            self.renderer.AddActor(lmk)
+            lmk.Select()
 
-            self.lmk[l] = dict(
-                coord=coord,
-                source=src,
-                actor=act,
-            )
+        self.refresh()
 
-    def remove_lmk(self):
-        if not len(self.lmk):
-            print('nothing to undo')
-            return
-        l = list(self.lmk.keys())[-1]
-        self.manager.current_label = l
-        renderer.RemoveActor(self.lmk[l]['actor'])
-        del self.lmk[l]
-        print('removed ' + l)
-        self.status.SetInput(self.manager.status)
-        self.ren_win.Render()
-        print('-'*88)
+    def del_lmk(self):
+        lmk = self.get_lmk(self.current_label) 
+        if lmk:
+            self.renderer.RemoveActor(lmk)
+            self.lmk.remove(lmk)
 
-    def next(self):
-        print('-'*88)
-        try:
-            self.manager.next_lmk()
-            self.status.SetInput(self.manager.status)
-            self.ren_win.Render()
-        except StopIteration:
-            self.write_lmk()
-            self.load()
- 
-    def write_lmk(self, lmk=None, savepath=None):
-        if lmk is None:
-            lmk = self.lmk
-        if savepath is None:
-            filename = self.manager.current_case
-            savepath = os.path.join(os.path.dirname(filename), os.path.basename(filename).replace('.nii.gz','-lip.csv'))
-        with open(savepath, 'w', newline='') as f:
-            csv.writer(f).writerows(zip(list(lmk.keys()),*zip(*[x['coord'] for x in lmk.values()])))
-        print(f'written to {savepath}')
-        print('-'*88)
-        
-    def load(self, filename=None):
-        if filename is None:
-            try:
-                filename = self.manager.next_case()
-                print('loading ' + filename)
-                print('-'*88)
-            except StopIteration:
-                self.quit()
-                print("Finished!")
-
-        self.reader.SetFileName(filename)
-        self.manager.current_label = labels[0]
-        self.status.SetInput(self.manager.status)
-        for v in self.lmk.values():
-            renderer.RemoveActor(v['actor'])
-        self.lmk = {}
-        self.reader.Update()
-        self.ren_win.Render()
-        return self
-
-
-class Manager:
-    def __init__(self, l):
-        self._iter = iter(l)
-        self.current_case = ''
-        self.current_label = labels[0]
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        try:
-            self.current_label = labels[0]
-            self.current_case = self._iter.__next__()           
-            return self.current_case
-        except StopIteration:
-            print('Finished')
-        
-    def next_case(self):
-        return self.__next__()
+        self.refresh()
 
     def next_lmk(self):
+        lmk = self.get_lmk(self.current_label)
+        if lmk:
+            lmk.Deselect()
         ind = labels.index(self.current_label) + 1
         if ind < len(labels):
             self.current_label = labels[ind]
-            return self.current_label
+            lmk = self.get_lmk(self.current_label)
+            if lmk:
+                lmk.Select()
+            self.refresh()
         else:
-            raise StopIteration
+            self.refresh('end of the list')
 
-    @property
-    def status(self):
-        return self.current_case + '\n' + self.current_label
+    def previous_lmk(self):
+        lmk = self.get_lmk(self.current_label)
+        if lmk:
+            lmk.Deselect()
+        ind = labels.index(self.current_label) - 1
+        if ind >= 0:
+            self.current_label = labels[ind]
+            lmk = self.get_lmk(self.current_label)
+            if lmk:
+                lmk.Select()
+            self.refresh()
+        else:
+            self.refresh('beginning of the list')
+        
+    def add_cases(self, list_of_cases):
+        # make sure no duplicate
+        self.docket += list_of_cases
+
+    def next_case(self):
+        ind = self.docket.index(self.current_case) + 1
+        if ind >= len(self.docket):
+            self.refresh('no more cases')
+            return
+        self.load(self.docket[ind])
+        self.refresh()
+
+    def save(self, lmk=None, savepath=None):
+        if lmk is None:
+            lmk = {x.label:x.coord for x in self.lmk}
+        if savepath is None:
+            filename = self.current_case
+            savepath = os.path.join(os.path.dirname(filename), os.path.basename(filename).replace('.nii.gz','-lip.csv'))
+        with open(savepath, 'w', newline='') as f:
+            csv.writer(f).writerows(zip(list(lmk.keys()),*zip(*list(lmk.values()))))
+        self.refresh(f'written to {savepath}')
+        
+    def load(self, filename=None):
+        if filename is None:
+            if hasattr(self, 'current_case'):
+                filename = self.current_case
+            else:
+                self.current_case = self.docket[0]
+                filename = self.current_case
+        else:
+            self.current_case = filename
+        self.reader.SetFileName(filename)
+        self.current_label = labels[0]
+        for x in self.lmk:
+            self.renderer.RemoveActor(x)
+        self.lmk = []
+        self.reader.Update()
+        self.refresh()
+
 
 if __name__ == '__main__':
-    root = sys.argv[1]
-    d = Digitizer(
-        Manager( glob.glob(os.path.join(root, '*', '*.nii.gz')) )
-    )
+    # root = sys.argv[1]
+    # all_cases = glob.glob(os.path.join(root, '*', '*.nii.gz'))
+    # cases_keep = []
+    # for i,c in enumerate(all_cases):
+    #     if not os.path.isfile(c.replace('.nii.gz','-lip.csv')):
+    #         cases_keep.append(c)
+    d = Digitizer()
+    d.add_cases( [r'C:\Users\tmhtxk25\Box\RPI\data\pre-post-paired-unc40-send-1122\n0001\20110425-pre.nii.gz'] )
     d.load()
     d.start()
 
