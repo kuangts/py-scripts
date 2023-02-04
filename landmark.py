@@ -1,19 +1,25 @@
-import re, math, collections, sqlite3
+import re, math, collections, sqlite3, operator
+from vtkmodules.vtkFiltersSources import vtkSphereSource 
+from vtkmodules.vtkRenderingCore import vtkBillboardTextActor3D
+from vtkmodules.vtkRenderingCore import vtkActor, vtkPolyDataMapper
 
 _nan = float('nan')
 _anynan = lambda x: any(map(math.isnan,x))
 db_location = r'C:\AA\AA.Release.GT\CASS.db'
-Detached = { "S", "U0R", "U1R-R", "U1R-L", "L0R", "L1R-R", "L1R-L", "COR-R", "COR-L" }
+
 
 class Library(frozenset):
     """
+    IMMUTABLE and UNORDERED
     this class is to bridge landmark database (CASS.db) and landmark manipulation in python.
     it provides simple functions for look-up and filter operations.
+    this is a subclass of forzenset and therefore it is
+    IMMUTABLE and UNORDERED
     """
 
     # class for entries
     Entry = collections.namedtuple('LDMK_ENTRY',('ID','M','Category','Group','Name','Fullname','Description','Coordinate','View','DP'))
-    setattr(Entry,'__repr__',lambda s: f'{s.Name} - {s.Group[3:]}')
+    setattr(Entry,'__repr__',lambda s: f'[{s.ID:>3}] {s.Name:<10}|{s.Group[3:]:^15}|{s.Category:^15}| {s.Fullname}')
 
     def __new__(cls, db_location_or_existing_set=db_location):
         if isinstance(db_location_or_existing_set, str): 
@@ -65,17 +71,26 @@ class Library(frozenset):
         obj = super().__new__(cls, items)
         return obj
 
+    def __repr__(self):
+        s = '\n'.join(x.__repr__() for x in self) + '\n\n'
+        s += f'total {len(self)} landmarks in library'
+        return s
+
     def field(self, fieldname):
         # extracts field or fields into list object
         # if fieldname is given in a string, then the returned list has members of self.Entry instances
         # if fieldname is given in a sequence, e.g. list, then each member is wrapped in a list as well
         if isinstance(fieldname, str):
-            assert fieldname in self.Entry._fields, f'{fieldname} is invalid input'
-            return [getattr(x, fieldname) for x in self]
+            if fieldname not in self.Entry._fields:
+                print(f'{fieldname} is invalid input')
+                return {}
+            return { getattr(x, fieldname) for x in self }
         elif isinstance(fieldname, collections.abc.Sequence):
             for f in fieldname:
-                assert f in self.Entry._fields, f'{f} is invalid input'
-            return [[getattr(x, f) for f in fieldname] for x in self]
+                if f not in self.Entry._fields:
+                    print(f'{f} is invalid input')
+                    return {}
+            return { [getattr(x, f) for f in fieldname] for x in self }
     
     def find(self, **kwargs):
         # finds the first match of self.Entry instance
@@ -94,6 +109,81 @@ class Library(frozenset):
         # takes a lambda which is applied onto library entries
         # e.g. library.filter(lambda x: 'Fz' in x.Name) will find Fz-R and Fz-L
         return self.__class__({x for x in self if callable_on_lib_entry(x)})
+
+
+    # operator functions
+    def union(self, other):
+        return self.__class__(super().union(other))
+
+    def difference(self, other):
+        return self.__class__(super().difference(other))
+
+    def intersection(self, other):
+        return self.__class__(super().intersection(other))
+
+    def __add__(self, other):
+        return self.union(other)
+
+    def __sub__(self, other):
+        return self.difference(other)
+
+    def __and__(self, other):
+        return self.intersection(other)
+
+
+    # convenience filter methods below
+    def group(self, grp):
+        return self.filter(lambda x:x.Group==grp)
+
+    def category(self, cat):
+        return self.filter(lambda x:x.Category==cat)
+
+    def bilateral(self):
+        return self.filter(lambda x: ('-L' in x.Name or '-R' in x.Name) and x.Name !='Stm-L')
+
+    def left(self):
+        return self.filter(lambda x: '-L' in x.Name and x.Name !='Stm-L')
+
+    def right(self):
+        return self.filter(lambda x: '-R' in x.Name)
+
+    def midline(self):
+        return self.filter(lambda x: '-L' not in x.Name and '-R' not in x.Name or x.Name =='Stm-L')
+
+    def detached(self):
+        return self.filter(lambda x: x.Name in { "S", "U0R", "U1R-R", "U1R-L", "L0R", "L1R-R", "L1R-L", "COR-R", "COR-L" })
+
+    def computed(self):
+        return self.filter(lambda x: "'" in x.Name)
+
+    def jungwook(self):
+        return self.filter(lambda x: x.Name in 
+            {
+                "Gb'",
+                "N'",
+                "Zy'-R",
+                "Zy'-L",
+                "Pog'",
+                "Me'",
+                "Go'-R",
+                "Go'-L",
+                "En-R",
+                "En-L",
+                "Ex-R",
+                "Ex-L",
+                "Prn",
+                "Sn",
+                "CM",
+                "Ls",
+                "Stm-U",
+                "Stm-L",
+                "Ch-R",
+                "Ch-L",
+                "Li",
+                "Sl",
+                "C",
+            }
+        )
 
 
 class LandmarkDict(dict):
@@ -335,23 +425,12 @@ class LandmarkDict(dict):
         return lmk
 
 
-try:
-    library = Library()
-except Exception as e:
-    print(f'landmark library is not loaded\n{e}')
-
-from vtkmodules.vtkFiltersSources import vtkSphereSource 
-from vtkmodules.vtkRenderingCore import vtkBillboardTextActor3D
-from vtkmodules.vtkRenderingCore import vtkActor, vtkPolyDataMapper
-
 class vtkLandmark:
 
     Color = (1,0,0)
     HighlightColor = (0,1,0)
 
-    def __init__(self, label, coord=(0,0,0), **kwargs):
-        for k,v in kwargs.items():
-            setattr(self, k, v)
+    def __init__(self, label:str, coord=(0,0,0), **kwargs):
         src = vtkSphereSource()
         src.SetCenter(*coord)
         src.SetRadius(1)
@@ -374,40 +453,56 @@ class vtkLandmark:
         self.sphere_actor.prop_name = 'ldmk'
         self.sphere_actor.parent = self
 
+        for k,v in kwargs.items():
+            setattr(self, k, v)
+
     @property
     def label(self):
-        return self.label_actor.GetInput()
+        return self.label_actor.GetInput().strip()
 
-    @classmethod
-    def SetColor(cls, *new_color):
-        cls.Color = new_color
-
-    @classmethod
-    def SetHighlightColor(cls, *new_color):
-        cls.HighlightColor = new_color
-
-    def MoveTo(self, new_coord):
+    def move_to(self, new_coord):
         self.sphere.SetCenter(*new_coord)
         self.sphere.Update()
         self.label_actor.SetPosition(*new_coord)
 
-    def SetRenderer(self, ren):
+    def set_renderer(self, ren):
         self.renderer = ren
         ren.AddActor(self.sphere_actor)
         ren.AddActor(self.label_actor)
 
-    def Remove(self):
+    def remove(self):
         self.renderer.RemoveActor(self.sphere_actor)
         self.renderer.RemoveActor(self.label_actor)
         del self.sphere_actor, self.label_actor, self.sphere
 
-    def Select(self):
-        self.sphere_actor.GetProperty().SetColor(*self.HighlightColor)
-        self.label_actor.GetTextProperty().SetColor(*self.HighlightColor)
+    def refresh(self):
+        if hasattr(self, 'selected') and self.selected:
+            self.sphere_actor.GetProperty().SetColor(*self.HighlightColor)
+            self.label_actor.GetTextProperty().SetColor(*self.HighlightColor)
+        else:
+            self.sphere_actor.GetProperty().SetColor(*self.Color)
+            self.label_actor.GetTextProperty().SetColor(*self.Color)
 
-    def Deselect(self):
-        self.sphere_actor.GetProperty().SetColor(*self.Color)
-        self.label_actor.GetTextProperty().SetColor(*self.Color)
+        self.sphere.Update()
+
+    def select(self):
+        self.selected = True
+        self.refresh()
+
+    def deselect(self):
+        self.selected = False
+        self.refresh()
+
+
+def library(db=db_location):
+    if '_library' in globals():
+        return globals()['_library']
+    else:
+        try:
+            globals()['_library'] = Library()
+            return globals()['_library']
+        except Exception as e:
+            print(f'landmark library is not loaded\n{e}')
 
 
 # if __name__=='__main__':
