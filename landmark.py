@@ -1,11 +1,18 @@
-import re, math, collections, sqlite3, operator
+# rewrite with this:
+# https://kitware.github.io/vtk-examples/site/Cxx/Interaction/MoveAGlyph/
+
+import re
+import sqlite3
+from math import isnan
+from copy import deepcopy
+from collections import namedtuple
+from collections.abc import Sequence
+import numpy as np
 from vtkmodules.vtkFiltersSources import vtkSphereSource 
 from vtkmodules.vtkRenderingCore import vtkBillboardTextActor3D
 from vtkmodules.vtkRenderingCore import vtkActor, vtkPolyDataMapper
 
-_nan = float('nan')
-_anynan = lambda x: any(map(math.isnan,x))
-db_location = r'C:\AA\AA.Release.GT\CASS.db'
+default_db_location = r'C:\AA\AA.Release.GT\CASS.db'
 
 
 class Library(frozenset):
@@ -13,15 +20,15 @@ class Library(frozenset):
     IMMUTABLE and UNORDERED
     this class is to bridge landmark database (CASS.db) and landmark manipulation in python.
     it provides simple functions for look-up and filter operations.
-    this is a subclass of forzenset and therefore it is
+    this is a subclass of forzenset and therefore it is, again
     IMMUTABLE and UNORDERED
     """
 
     # class for entries
-    Entry = collections.namedtuple('LDMK_ENTRY',('ID','M','Category','Group','Name','Fullname','Description','Coordinate','View','DP'))
+    Entry = namedtuple('LDMK_ENTRY',('ID','M','Category','Group','Name','Fullname','Description','Coordinate','View','DP'))
     setattr(Entry,'__repr__',lambda s: f'[{s.ID:>3}] {s.Name:<10}|{s.Group[3:]:^15}|{s.Category:^15}| {s.Fullname}')
 
-    def __new__(cls, db_location_or_existing_set=db_location):
+    def __new__(cls, db_location_or_existing_set=default_db_location):
         if isinstance(db_location_or_existing_set, str): 
             with sqlite3.connect(db_location_or_existing_set) as con:
                 # select all from table Landmark_Library
@@ -77,19 +84,17 @@ class Library(frozenset):
         return s
 
     def field(self, fieldname):
-        # extracts field or fields into list object
-        # if fieldname is given in a string, then the returned list has members of self.Entry instances
-        # if fieldname is given in a sequence, e.g. list, then each member is wrapped in a list as well
+        # extracts field or fields into set or sets
+        # if fieldname is given in a string, then the returned set has members of self.Entry instances
+        # if fieldname is given in a sequence, e.g. list, then each member of the returned set is a list
         if isinstance(fieldname, str):
             if fieldname not in self.Entry._fields:
-                print(f'{fieldname} is invalid input')
-                return {}
+                raise ValueError(f'{fieldname} is not a valid field')
             return { getattr(x, fieldname) for x in self }
-        elif isinstance(fieldname, collections.abc.Sequence):
+        elif isinstance(fieldname, Sequence):
             for f in fieldname:
                 if f not in self.Entry._fields:
-                    print(f'{f} is invalid input')
-                    return {}
+                    raise ValueError(f'{f} is not a valid field')
             return { [getattr(x, f) for f in fieldname] for x in self }
     
     def find(self, **kwargs):
@@ -188,13 +193,11 @@ class Library(frozenset):
 
 class LandmarkDict(dict):
     '''
-    this is a convenience class for handling landmark files of various formats
-    use exactly like a dictionary
-    be mindful of the data type put in - list and numpy.ndarray both work with the class
+    stores label:coordinate
     '''
 
     @classmethod
-    def read(cls, file, **parseargs):
+    def from_text(cls, file, **parseargs):
         # read text file, mainly txt and csv
         with open(file, 'r') as f:
             lmk_str = f.read()
@@ -202,7 +205,8 @@ class LandmarkDict(dict):
 
     @classmethod
     def from_excel(cls, file):
-        # read excel sheet with very specific format
+        # read excel sheet with very specific format - expored from CASS
+        # use from_cass instead if possible, and if db version is not an issue
         import pandas
         V = pandas.read_excel(file, header=0, engine='openpyxl').values
         return cls(zip(V[1:,0], (V[1:,1:4]+V[0,1:4]).tolist()))
@@ -220,7 +224,7 @@ class LandmarkDict(dict):
             lmk_new = {}
             lmk_del = {}
             for k,v in lmk.items():
-                x = library.find(ID=k)
+                x = library().find(ID=k)
                 if x is not None:
                     lmk_new[x.Name] = v
                 else:
@@ -229,28 +233,82 @@ class LandmarkDict(dict):
 
         return cls(lmk)
 
+    def copy(self):
+        return deepcopy(self)
+
+    def __getitem__(self, __key):
+        if __key in self:
+            val = super().__getitem__(__key)
+        else:
+            val = [float('nan')]*3
+        return val
+
+    def __setitem__(self, __key, __value) -> None:
+        if isinstance(__value, np.ndarray):
+            __value = __value.tolist()
+        if any(map(isnan,__value)):
+            print('WARNNING: coordinates must have finite value')
+            return None
+        return super().__setitem__(__key, __value)
+
+    def __delitem__(self, __key) -> None:
+        if __key not in self:
+            print(f'WARNING: landmark {__key} is not present')
+            return None
+        return super().__delitem__(__key)
+
+    def coordinates(self, ordered_labels=None):
+        new_self = self.copy()
+        if ordered_labels is None:
+            ordered_labels = self.keys()
+        return [new_self[k] for k in ordered_labels]
+
+    def select(self, ordered_labels):
+        new_self = self.copy()
+        return self.__class__({k:new_self[k] for k in ordered_labels if k in new_self})
+
+    def set_coordinates(self, coords):
+        if isinstance(coords, np.ndarray):
+            coords = coords.tolist()
+        for k,c in zip(self.keys(), coords):
+            self[k] = list(c)
+        return None
+
+    def __add__(self, t): # translation
+        new_self = self.copy()
+        for k in new_self.keys():
+            for i in range(3):
+                new_self[k][i] += +t[i]
+        return new_self
+
+    def __sub__(self, t): # translation
+        new_self = self.copy()
+        for k in new_self.keys():
+            for i in range(3):
+                new_self[k][i] -= t[i]
+        return new_self
+
+    def __matmul__(self, T): # rotation
+        T = np.asarray(T)
+        if T.shape not in ((3,3),(4,4)):
+            raise ValueError(f'cannot matmul with shape {T.shape}')
+        new_self = self.copy()
+        coords = np.asarray(self.coordinates())
+        if T.shape == (4,4):
+            coords = np.hstack((coords, np.ones((coords.shape[0],1))))
+        coords = coords @ T
+        new_self.set_coordinates( coords[:,:3] )
+        return new_self
+
     def write(self, file, **kwargs):
         write_str = self.string(**kwargs)
         if write_str:
             with open(file,'w') as f:
                 f.write(write_str)
 
-    def remove_nan(self):
-        for l in list(self.keys()):
-            if _anynan(self[l]):
-                self.pop(l)
-        return self
-
-    @property
-    def coordinates(self):
-        return list(self.values())
-
-    @property
-    def labels(self):
-        return list(self.keys())
 
     @classmethod
-    def parse(cls, lmk_str, num_lines_header=None, separator='[,: ]+', line_ending='[;\n]+', nan_str={'N/A','n/a','NA','na','nan','NaN'}):        
+    def parse(cls, lmk_str, num_lines_header=None, separator='[,: ]+', line_break='[;\n]+', nan_str={'N/A','n/a','NA','na','nan','NaN'}):        
         '''
         `num_lines_header` stores the number of lines before data begins. it must be set if not `None` - automatic determination is not supported yet.
         checks any combination of ';' and '\n' for line breaks
@@ -268,10 +326,10 @@ class LandmarkDict(dict):
 
             # regexp checks for patterns ';\n' or '\n' or ';' (in order given by a 'Sequence' of str), then splits at all occurrences 
 
-        assert line_ending and separator, 'must provide pattern for parsing'
+        assert line_break and separator, 'must provide pattern for parsing'
 
-        lmk_str = lmk_str.strip().strip(line_ending) # removes trailing newlines and semicolon to prevent creation of '' after split
-        lines = re.split(line_ending, lmk_str)
+        lmk_str = lmk_str.strip().strip(line_break) # removes trailing newlines and semicolon to prevent creation of '' after split
+        lines = re.split(line_break, lmk_str)
         for i,line in enumerate(lines):
             if re.fullmatch('^[\s]*[a-zA-Z]+.*', line) is not None:
                 # label is present - read four columns
@@ -285,84 +343,69 @@ class LandmarkDict(dict):
 
             assert len(coord)==3, 'split went wrong'
 
-            coord = [_nan if x.strip() in nan_str else float(x) for x in coord] # if nan, assign nan to coordinate 
+            if any([ x.strip() in nan_str  for x in coord]): # ignore nan's
+                continue
 
-            if not any(coord): # all zero scenario
-                coord = [_nan]*3 
+            coord = [float(x) for x in coord] 
+
+            if not any(coord): # all zero scenario, legacy reason
+                continue
+
             lmk[label.strip()] = coord
+
         return lmk
 
-    def string(self, nan_str='0.0', formatted=False, keep_label=True, keep_coordinate=True, header=None, separator=',', line_ending='\n'):
+    def string(self, ordered_label=None, formatted=False, keep_label=True, keep_coordinate=True, header=None, separator=',', line_break='\n'):
         '''
         `header` specifies the header content of the coming file, in a `list` or `str`. a `list` of three `str`s would correspond to three header lines. the default is `None`, no header. if set to `''`, it will try to write header using previous header if possible.
-        an nan value is written to file as `nan_str`. if `nan_str` is set to '0.0', then nan coordinates are written as '0.0, 0.0, 0.0', which is the default
-        if nan_str is '', all entries containing nan value(s) are removed
+        nan values are written to file as nan
         '''
 
-        # line_ending='\n' -> csv
-        # line_ending=';'  -> cass-readable, not recommended -- read from cass file directly if possible, or if cass is saved with the latest db file.
-        # line_ending=None -> do not join lines - returns list for further processing
+        # line_break='\n' -> csv
+        # line_break=';'  -> cass-readable, not recommended -- read from cass file directly if possible, or if cass is saved with the latest db file.
+        # line_break=None -> do not join lines - returns list for further processing
 
-        lmk = []
-
+        # header string
         if header is None:
             header = ''
         else:
             header = header if header else self.header
-            header = '\n'.join(header if isinstance(header, collections.abc.Sequence) and not isinstance(header,str) else [header]) + '\n'
+            header = '\n'.join(header if isinstance(header, Sequence) and not isinstance(header,str) else [header]) + '\n'
         
-        remove_nan = len(nan_str)==0
-
+        # landmark string
+        lmk = ''
         if formatted:
-            if not self.len(remove_nan=remove_nan):
-                lmk = ''
-            else:
+            if len(self):
                 header += '   LABEL  |        X        Y        Z\n' + '-'*40 + '\n'
                 lmk = '\n'.join([f'{l:10}| {x[0]:8.3f} {x[1]:8.3f} {x[2]:8.3f}' for l,x in self.items()])+'\n\n'
-                if self.len(remove_nan=False)==len(self):
-                    lmk += f'Total: {len(self)}\n'
-                else:
-                    lmk += f'Present/Total: {self.len(remove_nan=False)}/{len(self)}\n'
+            lmk += f'total: {len(self)}\n'
         else:
-            for label, coord in self.items():
-                if not remove_nan or not _anynan(coord):
-                    l = []
-                    if keep_label:
-                        l += [label]
-                    if keep_coordinate:
-                        if _anynan(coord):
-                            l += [nan_str]*3 
-                        else:
-                            l += [*map(str,coord)]
-                    lmk += [l]
+            lmk = []
+            if ordered_label is None:
+                ordered_label = self.keys() 
+            for label in ordered_label:
+                coord = self[label]
+                l = []
+                if keep_label:
+                    l += [label]
+                if keep_coordinate:
+                    l += [*map(str,coord)]
+                lmk += [l]
 
             if separator is None:
                 return lmk
             lmk = [separator.join(l).strip(separator) for l in lmk]
 
-            if line_ending is None:
+            if line_break is None:
                 return lmk
-            lmk = line_ending.join(lmk).strip(line_ending)
+            lmk = line_break.join(lmk).strip(line_break)
 
             if lmk:
-                lmk += line_ending
+                lmk += line_break
         
+        # combine
         return header + lmk
 
-    def sort_by(self, ordered_labels):
-        # select those labels, and order them, filling in nan if necessary
-        return self.__class__(
-            {label:([*self[label]] if label in self else [_nan]*3) for label in ordered_labels}
-        )
-
-    def len(self, remove_nan=False):
-        l = len(self)
-        if remove_nan:
-            l -= sum([ _anynan(v) for v in self.values() ])
-        return l
-
-    def __repr__(self):
-        return self.string(formatted=True)
 
     @property
     def header(self):
@@ -377,6 +420,7 @@ class LandmarkDict(dict):
             value = (value,)
         setattr(self, '_header', value)
 
+
     def move_to_mask(self, mask, threshold=None):
 
         import pkg_resources
@@ -386,7 +430,6 @@ class LandmarkDict(dict):
             print(e)
             return None
         import SimpleITK as sitk
-        import numpy as np
         from scipy.ndimage import binary_dilation, binary_erosion
 
         lmk_not_moved, lmk = self.select({'Detached'}, return_remaining=True)
@@ -419,7 +462,7 @@ class LandmarkDict(dict):
             ind = d>threshold
             coords_new[ind] = self.coordinates[ind]
 
-        lmk = LandmarkDict(zip(lmk.labels, coords_new))
+        lmk = LandmarkDict(zip(lmk.keys(), coords_new))
         lmk.update(lmk_not_moved['Detached'])
 
         return lmk
@@ -430,7 +473,7 @@ class vtkLandmark:
     Color = (1,0,0)
     HighlightColor = (0,1,0)
 
-    def __init__(self, label:str, coord=(0,0,0), **kwargs):
+    def __init__(self, label:str, coord=(float('nan'),)*3, **kwargs):
         src = vtkSphereSource()
         src.SetCenter(*coord)
         src.SetRadius(1)
@@ -494,7 +537,7 @@ class vtkLandmark:
         self.refresh()
 
 
-def library(db=db_location):
+def library(db=default_db_location):
     if '_library' in globals():
         return globals()['_library']
     else:
@@ -502,7 +545,7 @@ def library(db=db_location):
             globals()['_library'] = Library()
             return globals()['_library']
         except Exception as e:
-            print(f'landmark library is not loaded\n{e}')
+            print(f'landmark library is not loaded\n{e}\ncheck default_db_location->{default_db_location}')
 
 
 # if __name__=='__main__':
@@ -536,7 +579,7 @@ def library(db=db_location):
 #                 header=args.num_header,
 #                 nan_str=args.read_nan,
 #                 separator=args.read_delimiter,
-#                 line_ending=args.read_line_break)
+#                 line_break=args.read_line_break)
 #     lmk_str = lmk.string(
 #                 header=args.header,
 #                 formatted=args.formatted,
@@ -544,7 +587,7 @@ def library(db=db_location):
 #                 keep_label=not args.no_label,
 #                 keep_coordinate=not args.label_only,
 #                 separator=args.delimiter,
-#                 line_ending=args.line_break)
+#                 line_break=args.line_break)
 
 #     if args.output is not None:
 #         with open(args.output, 'wt', newline='') as f:
