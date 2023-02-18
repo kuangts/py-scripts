@@ -28,13 +28,14 @@ from vtkmodules.vtkRenderingCore import (
     vtkRenderer
 )
 from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
-from landmark import vtkLandmark, LandmarkDict, library
+import landmark
+from landmark import vtkLandmark, LandmarkDict
 import vtk
 import numpy as np
 from scipy.spatial  import KDTree
 
 
-lmk_lib = library().jungwook()
+lmk_lib = landmark.Library().soft_tissue_23()
 computed = list(lmk_lib.computed().field('Name'))
 digitized = list((lmk_lib - lmk_lib.computed()).field('Name'))
 computed.sort()
@@ -64,7 +65,7 @@ class Digitizer():
         # keep only required landmarks
         if ordered_list is not None:
             lmk = lmk.select(ordered_list)
-
+        print(lmk)
         return lmk
 
     @staticmethod
@@ -76,7 +77,7 @@ class Digitizer():
         return vtk_lmk
 
     @staticmethod
-    def generate_mdoel(source, threshold, color, **kwargs):
+    def generate_model(source, threshold, color, **kwargs):
         extractor = vtkFlyingEdges3D()
         extractor.SetInputConnection(source.GetOutputPort())
         extractor.SetValue(*threshold)
@@ -204,13 +205,13 @@ class Digitizer():
             self.reader = vtkNIFTIImageReader()
 
             # build models
-            self.skin, self.skin_actor = self.generate_mdoel(
+            self.skin, self.skin_actor = self.generate_model(
                 source=self.reader,
                 threshold=(0, 324),
                 color=colors.GetColor3d('peachpuff'),
                 prop_name='skin'
                 )
-            self.bone, self.bone_actor = self.generate_mdoel(
+            self.bone, self.bone_actor = self.generate_model(
                 source=self.reader,
                 threshold=(0, 1250),
                 color=colors.GetColor3d('grey'),
@@ -284,7 +285,8 @@ class Digitizer():
         s = self.ren_win.GetSize()
         s0 = [float('nan')]*2
         self.status.GetSize(self.ren, s0)
-        self.status.SetPosition(s[0]*.8,s[1]*.9-s0[1])
+        # self.status.SetPosition(s[0]*.8,s[1]*.9-s0[1])
+        self.status.SetPosition(0,0)
 
 
     ######   interactor callbacks   ######
@@ -313,19 +315,19 @@ class Digitizer():
     def mouse_move(self, obj, event):
         obj.pick_mode = False
         pos = self.iren.GetEventPosition()
-        if not (hasattr(obj, 'right_button') and obj.right_button or hasattr(obj, 'left_button') and obj.left_button):
-            obj.picker_right.Pick(pos[0], pos[1], 0, self.ren)
-            self.cursor.SetPosition(pos[0], pos[1])
-            coord_current = self.lmk[obj.selection.label]
-            direc_current = self.nml[obj.selection.label]
-            if not np.isnan(coord_current).any() and obj.picker_right.GetCellId() != -1:
-                coord = np.asarray((obj.picker_right.GetPickPosition()))
-                direc = np.asarray((obj.picker_right.GetPickNormal()))
-                vec = coord - coord_current
-                d = np.sum((coord - coord_current)**2)**.5
-                a = np.arccos(vec.dot(direc_current)/np.sum(vec**2)**.5)/np.pi*180
-                self.cursor.SetInput(f'dist:{d:.2f}\nangle:{a:.1f}')
-                self.ren_win.Render()
+        # if not (hasattr(obj, 'right_button') and obj.right_button or hasattr(obj, 'left_button') and obj.left_button):
+        #     obj.picker_right.Pick(pos[0], pos[1], 0, self.ren)
+        #     self.cursor.SetPosition(pos[0], pos[1])
+        #     coord_current = self.lmk[obj.selection.label]
+        #     direc_current = self.nml[obj.selection.label]
+        #     if not np.isnan(coord_current).any() and obj.picker_right.GetCellId() != -1:
+        #         coord = np.asarray((obj.picker_right.GetPickPosition()))
+        #         direc = np.asarray((obj.picker_right.GetPickNormal()))
+        #         vec = coord - coord_current
+        #         d = np.sum((coord - coord_current)**2)**.5
+        #         a = np.arccos(vec.dot(direc_current)/np.sum(vec**2)**.5)/np.pi*180
+        #         self.cursor.SetInput(f'dist:{d:.2f}\nangle:{a:.1f}')
+        #         self.ren_win.Render()
         obj.OnMouseMove()
 
     def left_button_release_event(self, obj, event):
@@ -409,7 +411,7 @@ if __name__ == '__main__':
 
     d = Digitizer()
     d.setup(
-        r'C:\data\pre-post-paired-40-send-1122\n0030\20140909-pre.nii.gz',
-        r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Desktop\jungwook23-add\n0030\skin-pre-23.csv',
+        r'C:\data\pre-post-paired-40-send-1122\n0002\20100921-pre.nii.gz',
+        r'C:\data\pre-post-paired-soft-tissue-lmk-23\n0002\skin-pre-23.csv',
         )
     d.start()

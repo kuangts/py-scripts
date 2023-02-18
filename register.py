@@ -189,6 +189,7 @@ def nicp(SRC, TAR, iterations=20):
         v_src[...] = SRC.V
         vn_src[...] = SRC.VN
 
+    SRC.V = np.ascontiguousarray(SRC.V)
     return SRC
 
 

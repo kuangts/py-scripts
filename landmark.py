@@ -3,30 +3,44 @@
 
 import re
 import sqlite3
+from typing import Any
 from math import isnan
 from copy import deepcopy
 from collections import namedtuple
-from collections.abc import Sequence
+from collections.abc import Sequence, Iterable
+from operator import itemgetter, attrgetter
+
 import numpy as np
 from vtkmodules.vtkFiltersSources import vtkSphereSource 
 from vtkmodules.vtkRenderingCore import vtkBillboardTextActor3D
 from vtkmodules.vtkRenderingCore import vtkActor, vtkPolyDataMapper
 
-default_db_location = r'C:\AA\AA.Release.GT\CASS.db'
+default_db_location = r'C:\py-scripts\CASS.db'
+landmark_entry_fields = ('ID','M','Category','Group','Name','Fullname','Description','Coordinate','View','DP') # corresponding to the db
+soft_tissue_labels_23 = {
+                            "Gb'", 'Ls', 'Sl', 'En-R', 'Stm-L', "Zy'-L", 'Stm-U', "Go'-L", 'Ex-R', 'Sn',
+                            'Prn', "Pog'", 'Ex-L', "Go'-R", 'En-L', 'Li', 'CM', "N'", 'Ch-R', "Me'",
+                            'C', "Zy'-R", 'Ch-L'
+                        }
+
+LDMK = namedtuple('LDMK', landmark_entry_fields)
 
 
-class Library(frozenset):
+class Library(frozenset): # immutable set containing immutable landmark entries
     """
-    IMMUTABLE and UNORDERED
+    immutable set containing immutable landmark definition
     this class is to bridge landmark database (CASS.db) and landmark manipulation in python.
     it provides simple functions for look-up and filter operations.
-    this is a subclass of forzenset and therefore it is, again
+    this is a subclass of Set/forzenset and therefore it is, again
     IMMUTABLE and UNORDERED
     """
-
-    # class for entries
-    Entry = namedtuple('LDMK_ENTRY',('ID','M','Category','Group','Name','Fullname','Description','Coordinate','View','DP'))
-    setattr(Entry,'__repr__',lambda s: f'[{s.ID:>3}] {s.Name:<10}|{s.Group[3:]:^15}|{s.Category:^15}| {s.Fullname}')
+    @classmethod
+    def from_db(cls, location):
+        if not hasattr(cls, 'lib'):
+            cls.lib = {}
+        if not location in cls.lib:
+            cls.lib[location] = cls(location)
+        return cls.lib[location]
 
     def __new__(cls, db_location_or_existing_set=default_db_location):
         if isinstance(db_location_or_existing_set, str): 
@@ -57,7 +71,7 @@ class Library(frozenset):
 
             # following items are the content of the library
             items = [
-                cls.Entry(
+                LDMK(
                     ID=int(x[0]),
                     M=int(x[1]),
                     Category=x[2],
@@ -73,40 +87,53 @@ class Library(frozenset):
             ]
         else: # creating library from existing set, likely a subset of the full library
             items = db_location_or_existing_set
-            assert all(isinstance(x, cls.Entry) for x in items), f'cannot create library with input {db_location_or_existing_set}'
+            assert all(isinstance(x, LDMK) for x in items), f'cannot create library with input {db_location_or_existing_set}'
 
         obj = super().__new__(cls, items)
+
         return obj
 
-    def __repr__(self):
-        s = '\n'.join(x.__repr__() for x in self) + '\n\n'
-        s += f'total {len(self)} landmarks in library'
-        return s
+    def __copy__(self):
+        return self
+
+    def __contains__(self, __name):
+        if isinstance(__name, str):
+            return __name in self.field('Name')
+        return super().__contains__(__name)
 
     def field(self, fieldname):
-        # extracts field or fields into set or sets
-        # if fieldname is given in a string, then the returned set has members of self.Entry instances
-        # if fieldname is given in a sequence, e.g. list, then each member of the returned set is a list
+        # extracts field or fields into set
+        # fieldname is given in a string
+        # the returned set has specified field of the namedtuple (LDMK)
         if isinstance(fieldname, str):
-            if fieldname not in self.Entry._fields:
+            if fieldname not in LDMK._fields:
                 raise ValueError(f'{fieldname} is not a valid field')
             return { getattr(x, fieldname) for x in self }
-        elif isinstance(fieldname, Sequence):
-            for f in fieldname:
-                if f not in self.Entry._fields:
-                    raise ValueError(f'{f} is not a valid field')
-            return { [getattr(x, f) for f in fieldname] for x in self }
+        else:
+            raise ValueError('fieldname is not valid input')
     
+    def split(self, fieldnames):
+        # extracts fields into lists
+        for f in fieldnames:
+            if f not in LDMK._fields:
+                raise ValueError(f'{f} is not a valid field')
+        return tuple(zip(*[[getattr(x, f) for f in fieldnames] for x in self ]))
+    
+    def sorted(self, key_or_fieldname='Group', reverse=False):
+        key = attrgetter(key_or_fieldname) if isinstance(key_or_fieldname, str) else key_or_fieldname
+        return sorted(self, key=key_or_fieldname, reverse=reverse)
+
     def find(self, **kwargs):
-        # finds the first match of self.Entry instance
+        # finds the first match of LDMK instance
         # or returns None is none is found
         # use **kwargs to specify matching condition
-        # e.g. library.find(Name='Fz-R') will find entry x where x.Name=='Fz-R'
+        # e.g. library.find(Name='Fz-R') will find LDMK x where x.Name=='Fz-R'
         # e.g. library.find(Category='Skeletal') will find and return only the first skeletal landmark
         # to find all matches, use filter instead: e.g. library.filter(lambda x: x.Category=='Skeletal')
         for x in self:
             if all(map(lambda a:getattr(x,a[0])==a[1], kwargs.items())):
                 return x
+        return None
 
     def filter(self, callable_on_lib_entry=lambda x:x.Name!=""):
         # returns subset of items matching criteria
@@ -115,16 +142,24 @@ class Library(frozenset):
         # e.g. library.filter(lambda x: 'Fz' in x.Name) will find Fz-R and Fz-L
         return self.__class__({x for x in self if callable_on_lib_entry(x)})
 
+    # following logical operators only consider Name of each element
+    def isdisjoint(self, other: Iterable[Any]) -> bool:
+        return self.field('Name').isdisjoint(other.field('Name'))
 
-    # operator functions
     def union(self, other):
+        if not self.isdisjoint(other):
+            raise ValueError('landmark sets performing union must be disjoint')
         return self.__class__(super().union(other))
 
     def difference(self, other):
-        return self.__class__(super().difference(other))
+        return self.filter(lambda x: x.Name in 
+            self.field('Name').difference(other.field('Name'))
+        )
 
     def intersection(self, other):
-        return self.__class__(super().intersection(other))
+        return self.filter(lambda x: x.Name in 
+            self.field('Name').intersection(other.field('Name'))
+        )
 
     def __add__(self, other):
         return self.union(other)
@@ -134,7 +169,6 @@ class Library(frozenset):
 
     def __and__(self, other):
         return self.intersection(other)
-
 
     # convenience filter methods below
     def group(self, grp):
@@ -161,36 +195,159 @@ class Library(frozenset):
     def computed(self):
         return self.filter(lambda x: "'" in x.Name)
 
-    def jungwook(self):
-        return self.filter(lambda x: x.Name in 
-            {
-                "Gb'",
-                "N'",
-                "Zy'-R",
-                "Zy'-L",
-                "Pog'",
-                "Me'",
-                "Go'-R",
-                "Go'-L",
-                "En-R",
-                "En-L",
-                "Ex-R",
-                "Ex-L",
-                "Prn",
-                "Sn",
-                "CM",
-                "Ls",
-                "Stm-U",
-                "Stm-L",
-                "Ch-R",
-                "Ch-L",
-                "Li",
-                "Sl",
-                "C",
-            }
-        )
+    def soft_tissue_23(self):
+        return self.filter(lambda x: x.Name in soft_tissue_labels_23)
+        
+    def skeletal(self):
+        return self.filter(lambda x: x.Category == 'Skeletal')
+        
+    def soft_tissue(self):
+        return self.filter(lambda x: x.Category == 'Soft Tissue')
+        
+    def string(self, sort_key=attrgetter('ID'), group_key=attrgetter('Group'), indent=' ', **passthrough):
+        if sort_key is not None:
+            new_coll = self.sorted(sort_key)
+        else:
+            new_coll = self
+        if group_key is not None:
+            str_dict = {}
+            sub_indent = indent+'  '
+            for x in new_coll:
+                g = str(group_key(x))
+                if g not in str_dict:
+                    str_dict[g] = []
+                str_dict[g].append(x.string(group=False, indent=sub_indent, **passthrough))
+            return_str = f'\n\n{indent}'.join(f'\n{sub_indent}'.join([k+':',*str_dict[k]]) for k in sorted(str_dict.keys()))
+        else:
+            return_str = f'\n{indent}'.join(x.string(indent=indent, **passthrough) for x in new_coll)
+        return indent + return_str + '\n'
+    
+    def __repr__(self):
+        return self.string(truncate_definition=False, coordinate=False)
+
+class LandmarkSet(Library):
+    """
+    immutable set containing immutable landmark entries including coordinates
+    this class uses the same structure as `Library`
+    but enables landmark reading.
+    IMMUTABLE and UNORDERED
+    """
+
+    def __new__(cls, file_location_or_existing_set, db_location=default_db_location, **parseargs):
+        # read the db to get landmark definitions
+        db = super().__new__(cls, db_location)
+        if isinstance(file_location_or_existing_set, str):
+            # read landmark string
+            with open(file_location_or_existing_set, 'r') as f:
+                lmk_str = f.read()
+            # parse landmark string
+            labels, coordinates, _ = LandmarkDict.parse(lmk_str, **parseargs)
+            coord_dict = dict(zip(labels, coordinates))
+            # check if there is unknown landmark
+            if not all(x in db.field('Name') for x in coord_dict):
+                print('WARNING: some labels are not recognized')
+            # prepare for instantiation
+            lmk_set = {x._replace(Coordinate=tuple(coord_dict[x.Name])) for x in db if x.Name in coord_dict}
+        else:
+            lmk_set = file_location_or_existing_set
+
+        # create landmark set
+        obj = super().__new__(cls, lmk_set)
+
+        return obj
+            
+
+    def __getitem__(self, __key):
+        if isinstance(__key, str):
+            x = self.find(Name=__key)
+            if x is None:
+                return (float('nan'),)*3
+            return x.Coordinate
+        elif isinstance(__key, Sequence) and all(isinstance(x,str) for x in __key):
+            return [self.__getitem__(k) for k in __key]
+        else:
+            raise ValueError('cannot get item: wrong key')
+            
+    def set_coordinates(self, __key, __value):
+        if isinstance(__key , str):
+            return self.set_coordinates([__key],[__value])
+        elif isinstance(__key, Sequence) and isinstance(__value, Sequence) and len(__key) == len(__value) and all(isinstance(x, str) for x in __key) and all(len(v)==3 for v in __value):
+            return self.__class__({x._replace(Coordinate=tuple(__value[__key.index(x.Name)])) if x.Name in __key else x for x in self})
+        else:
+            raise ValueError('cannot set coordinates')
+
+    def __setitem__(self, __key, __value) -> None:
+        raise ValueError('setting item not allowed for immutable set')
+
+    def __delitem__(self, __key) -> None:
+        raise ValueError('deleting item not allowed for immutable set')
+
+    @property
+    def centroid(self):
+        return np.asarray(list(self.field('Coordinate'))).mean(axis=0).tolist()
+
+    def translate(self, t):
+        labels, coords = self.split(('Name','Coordinate'))
+        coords_dict = dict(zip(labels, (np.asarray(coords) + t).tolist()))
+        return self.__class__({ x._replace(Coordinate=tuple(coords_dict[x.Name])) for x in self })
+
+    def transform(self, T, post_multiply=True): 
+        T = np.array(T)
+        if T.shape not in ((3,3),(4,4)):
+            raise ValueError(f'incompatible matrix shape: {T.shape} ')
+        labels, coords = self.split(('Name','Coordinate'))
+        if T.shape == (4,4):
+            coords = np.hstack((coords, np.ones((len(coords),1))))
+        new_coords = coords @ T if post_multiply else coords @ T.T
+        coords_dict = dict(zip(labels, new_coords[:,:3].tolist()))
+        return self.__class__({ x._replace(Coordinate=tuple(coords_dict[x.Name])) for x in self })
+
+    def __repr__(self):
+        return self.string(sort_key=attrgetter('ID'), group_key=None, group=False, id=False, definition=False)
 
 
+class LDMK(LDMK):
+
+    def print_str(self):
+        d = dict(zip(landmark_entry_fields, (
+            f'[{self.ID:>3}]',
+            f'{self.M}',
+            f'{self.Category}',
+            f'{self.Group[3:]:<12}',
+            f'{self.Name:<10}',
+            f'{self.Fullname.strip()}',
+            f'{self.Description.strip()}',
+            f'({self.Coordinate[0]:7.2f}, {self.Coordinate[1]:7.2f}, {self.Coordinate[2]:7.2f})', # len=27
+            f'{self.View}',
+            f'{self.DP}',
+        )))
+        d['Name_Group'] = f'{self.Name} <{self.Group[3:]}>' + ' '*max(23 - len(self.Name) - len(self.Group),0) # len=20
+        d['Definition'] = '{Fullname}: {Description}'.format(**d)
+        d['Definition_truncated'] = d['Definition']
+        if len(d['Definition']) > 80:
+            d['Definition_truncated'] = d['Definition'][:75] + ' ... '
+        return d
+
+    def string(self, id=True, group=True, coordinate=True, definition=True, truncate_definition=True, indent=''):
+        print_str = self.print_str()
+        fstr = ''
+        if id:
+            fstr += '{ID} '
+            indent += ' '*(len(print_str['ID'])+1)
+        fstr += '{Name_Group}' if group else '{Name}'
+        if coordinate:
+            fstr += '{Coordinate}'
+            if definition:
+                fstr += f'\n{indent}' + ('{Definition_truncated}' if truncate_definition else '{Definition}')
+        elif definition:
+            fstr += '{Fullname}' + f'\n{indent}' + '{Description}'
+
+        return fstr.format(**print_str)
+
+    def __repr__(self):
+        return self.string()
+
+        
 class LandmarkDict(dict):
     '''
     stores label:coordinate
@@ -201,11 +358,14 @@ class LandmarkDict(dict):
         # read text file, mainly txt and csv
         with open(file, 'r') as f:
             lmk_str = f.read()
-            return cls.parse(lmk_str, **parseargs)
+            labels, coordinates, header = cls.parse(lmk_str, **parseargs)
+            obj = cls(zip(labels, coordinates))
+            setattr(obj, 'header', header)
+            return obj
 
     @classmethod
     def from_excel(cls, file):
-        # read excel sheet with very specific format - expored from CASS
+        # read excel sheet with very specific format - exported from CASS
         # use from_cass instead if possible, and if db version is not an issue
         import pandas
         V = pandas.read_excel(file, header=0, engine='openpyxl').values
@@ -224,7 +384,7 @@ class LandmarkDict(dict):
             lmk_new = {}
             lmk_del = {}
             for k,v in lmk.items():
-                x = library().find(ID=k)
+                x = Library.from_db(default_db_location).find(ID=k)
                 if x is not None:
                     lmk_new[x.Name] = v
                 else:
@@ -232,6 +392,7 @@ class LandmarkDict(dict):
             lmk = lmk_new
 
         return cls(lmk)
+
 
     def copy(self):
         return deepcopy(self)
@@ -265,7 +426,9 @@ class LandmarkDict(dict):
 
     def select(self, ordered_labels):
         new_self = self.copy()
-        return self.__class__({k:new_self[k] for k in ordered_labels if k in new_self})
+        return_self = self.__class__()
+        result = self.__class__({k:new_self[k] for k in ordered_labels})
+        return result
 
     def set_coordinates(self, coords):
         if isinstance(coords, np.ndarray):
@@ -276,6 +439,9 @@ class LandmarkDict(dict):
 
     def __add__(self, t): # translation
         new_self = self.copy()
+        if type(t) == type(self):
+            new_self.update(t)
+            return new_self
         for k in new_self.keys():
             for i in range(3):
                 new_self[k][i] += +t[i]
@@ -283,6 +449,10 @@ class LandmarkDict(dict):
 
     def __sub__(self, t): # translation
         new_self = self.copy()
+        if type(t) == type(self):
+            #############################################################################################
+            new_self.update(t)
+            return new_self
         for k in new_self.keys():
             for i in range(3):
                 new_self[k][i] -= t[i]
@@ -307,8 +477,8 @@ class LandmarkDict(dict):
                 f.write(write_str)
 
 
-    @classmethod
-    def parse(cls, lmk_str, num_lines_header=None, separator='[,: ]+', line_break='[;\n]+', nan_str={'N/A','n/a','NA','na','nan','NaN'}):        
+    @staticmethod
+    def parse(lmk_str, num_lines_header=None, separator='[,: ]+', line_break='[;\n]+', nan_str={'N/A','n/a','NA','na','nan','NaN'}):        
         '''
         `num_lines_header` stores the number of lines before data begins. it must be set if not `None` - automatic determination is not supported yet.
         checks any combination of ';' and '\n' for line breaks
@@ -317,12 +487,12 @@ class LandmarkDict(dict):
             with labels, each line starting with alphabetic characters
             without label, numeric only, use 0-based index in string as label
         '''
-        lmk = cls()
+        labels, coordinates, header = [],[],[]
 
         # 'header' stores number of lines in the begining of file before data, might be different from pandas, performs n splits where n equals 'header'
         if num_lines_header:
             lmk_str = lmk_str.split('\n', num_lines_header) 
-            lmk.header, lmk_str = lmk_str[0:num_lines_header], lmk_str[-1]
+            header, lmk_str = lmk_str[0:num_lines_header], lmk_str[-1]
 
             # regexp checks for patterns ';\n' or '\n' or ';' (in order given by a 'Sequence' of str), then splits at all occurrences 
 
@@ -351,9 +521,10 @@ class LandmarkDict(dict):
             if not any(coord): # all zero scenario, legacy reason
                 continue
 
-            lmk[label.strip()] = coord
+            labels.append(label.strip())
+            coordinates.append(coord)
 
-        return lmk
+        return labels, coordinates, header
 
     def string(self, ordered_label=None, formatted=False, keep_label=True, keep_coordinate=True, header=None, separator=',', line_break='\n'):
         '''
@@ -537,18 +708,19 @@ class vtkLandmark:
         self.refresh()
 
 
-def library(db=default_db_location):
-    if '_library' in globals():
-        return globals()['_library']
-    else:
-        try:
-            globals()['_library'] = Library()
-            return globals()['_library']
-        except Exception as e:
-            print(f'landmark library is not loaded\n{e}\ncheck default_db_location->{default_db_location}')
 
+if __name__=='__main__':
 
-# if __name__=='__main__':
+    lmk = LandmarkSet(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Desktop\extracted_from_cass.csv')
+    # lmk = lmk.bilateral()
+    # lmk.transform(np.eye(3))
+    # lmk.transform(np.eye(4)).field('Coordinate')
+    # lmka = lmk.set_coordinates('A',(1,2,3))
+    # print(lmk['A'])
+    # print(lmka['A'])
+    # print(lib)
+    print(len(lmk))
+    print(lmk['Zy-R'])
 #     parser = argparse.ArgumentParser(allow_abbrev=True)
 #     parser.add_argument('--input', type=str, nargs='?')
 #     parser.add_argument('--output', type=str, nargs='?')
