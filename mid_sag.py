@@ -77,7 +77,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from pycpd import DeformableRegistration
 from argparse import Namespace as encap
-
+import saikiran321
 
 def polydata_to_numpy(polydata):
     numpy_nodes = vtk_to_numpy(polydata.GetPoints().GetData())
@@ -215,6 +215,17 @@ class ChestVisualizer(vtk_basic.Visualizer):
         print(src_reg.nodes.shape)
         return src_reg
 
+    @staticmethod
+    def saikiran321_nonrigidIcp(tar, src):
+        src_reg = deepcopy(src)
+        src_reg = saikiran321.nonrigidIcp(
+            encap(vertices=src.nodes, triangles=src.faces),
+            encap(vertices=tar.nodes, triangles=tar.faces),
+        )
+        src_reg.nodes = src_reg.vertices
+        src_reg.faces = src_reg.triangles
+        
+        return src_reg
 
     def register(self):
 

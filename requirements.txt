@@ -3,7 +3,8 @@ scipy
 h5py
 pandas
 SimpleITK
-plotly
 openpyxl
 sklearn
 open3d
+vtk
+PyQt5

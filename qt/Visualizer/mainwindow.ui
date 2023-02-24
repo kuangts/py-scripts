@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Form</string>
+  </property>
+  <widget class="QGraphicsView" name="graphicsView">
+   <property name="geometry">
+    <rect>
+     <x>10</x>
+     <y>10</y>
+     <width>461</width>
+     <height>461</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QListWidget" name="listWidget">
+   <property name="geometry">
+    <rect>
+     <x>480</x>
+     <y>10</y>
+     <width>151</width>
+     <height>211</height>
+    </rect>
+   </property>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+   <item>
+    <property name="text">
+     <string>New Item</string>
+    </property>
+   </item>
+  </widget>
+  <widget class="QGraphicsView" name="graphicsView_2">
+   <property name="geometry">
+    <rect>
+     <x>480</x>
+     <y>280</y>
+     <width>151</width>
+     <height>191</height>
+    </rect>
+   </property>
+  </widget>
+  <widget class="QLabel" name="label">
+   <property name="geometry">
+    <rect>
+     <x>480</x>
+     <y>230</y>
+     <width>151</width>
+     <height>41</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>LMK</string>
+   </property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

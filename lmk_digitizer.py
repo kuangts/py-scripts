@@ -33,7 +33,7 @@ from landmark import vtkLandmark, LandmarkDict
 import vtk
 import numpy as np
 from scipy.spatial  import KDTree
-
+ 
 
 lmk_lib = landmark.Library().soft_tissue_23()
 computed = list(lmk_lib.computed().field('Name'))

@@ -42,6 +42,9 @@ class Library(frozenset): # immutable set containing immutable landmark entries
             cls.lib[location] = cls(location)
         return cls.lib[location]
 
+    def to_dict(self):
+        return LandmarkDict({x.Name:x.Coordinate for x in self.sorted()})
+
     def __new__(cls, db_location_or_existing_set=default_db_location):
         if isinstance(db_location_or_existing_set, str): 
             with sqlite3.connect(db_location_or_existing_set) as con:
@@ -90,7 +93,6 @@ class Library(frozenset): # immutable set containing immutable landmark entries
             assert all(isinstance(x, LDMK) for x in items), f'cannot create library with input {db_location_or_existing_set}'
 
         obj = super().__new__(cls, items)
-
         return obj
 
     def __copy__(self):
@@ -121,7 +123,7 @@ class Library(frozenset): # immutable set containing immutable landmark entries
     
     def sorted(self, key_or_fieldname='Group', reverse=False):
         key = attrgetter(key_or_fieldname) if isinstance(key_or_fieldname, str) else key_or_fieldname
-        return sorted(self, key=key_or_fieldname, reverse=reverse)
+        return sorted(self, key=key, reverse=reverse)
 
     def find(self, **kwargs):
         # finds the first match of LDMK instance
@@ -237,17 +239,20 @@ class LandmarkSet(Library):
         # read the db to get landmark definitions
         db = super().__new__(cls, db_location)
         if isinstance(file_location_or_existing_set, str):
-            # read landmark string
-            with open(file_location_or_existing_set, 'r') as f:
-                lmk_str = f.read()
-            # parse landmark string
-            labels, coordinates, _ = LandmarkDict.parse(lmk_str, **parseargs)
-            coord_dict = dict(zip(labels, coordinates))
-            # check if there is unknown landmark
-            if not all(x in db.field('Name') for x in coord_dict):
-                print('WARNING: some labels are not recognized')
+            if not file_location_or_existing_set:
+                coord_dict = {}
+            else:
+                # read landmark string
+                with open(file_location_or_existing_set, 'r') as f:
+                    lmk_str = f.read()
+                # parse landmark string
+                labels, coordinates, _ = LandmarkDict.parse(lmk_str, **parseargs)
+                coord_dict = dict(zip(labels, coordinates))
+                # check if there is unknown landmark
+                if not all(x in db.field('Name') for x in coord_dict):
+                    print('WARNING: some labels are not recognized')
             # prepare for instantiation
-            lmk_set = {x._replace(Coordinate=tuple(coord_dict[x.Name])) for x in db if x.Name in coord_dict}
+            lmk_set = {x._replace(Coordinate=tuple(coord_dict[x.Name])) for x in db}
         else:
             lmk_set = file_location_or_existing_set
 
