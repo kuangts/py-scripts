@@ -70,20 +70,26 @@ class landmark(namedarray):
 
     def get(self, name):
         try:
-            coord = self[self['name'].index(name)]['coordinates']
-        except:
+            id = (self['name']==name).nonzero()[0]
+            if not len(id):
+                raise ValueError(f'cannot find {name}')
+            coord = self[(self['name']==name).nonzero()[0][0]]['coordinates']
+        except Exception as e:
+            print(e)
             coord = np.asarray([np.nan,]*3)
         return coord
 
 
     def set(self, name, coord):
         try:
-            id = self['name'].index(name)
+            id = (self['name']==name).nonzero()[0]
+            if not len(id):
+                raise ValueError(f'cannot find {name}')
         except:
             return np.asarray([np.nan,]*3)
 
-        old_coord = self[id]['coordinates']
-        self[id]['coordinates'] = coord
+        old_coord = self[id[0]]['coordinates'].copy() ## WHY?????????????????
+        self[id[0]]['coordinates'][:] = coord[:]
         return old_coord
 
 
@@ -671,7 +677,7 @@ class vtkLandmark:
 
 if __name__=='__main__':
 
-    lmk = LandmarkSet(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Desktop\extracted_from_cass.csv')
+    lmk = landmark.from_text(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Desktop\extracted_from_cass.csv')
     # lmk = lmk.bilateral()
     # lmk.transform(np.eye(3))
     # lmk.transform(np.eye(4)).field('Coordinate')
@@ -679,8 +685,10 @@ if __name__=='__main__':
     # print(lmk['A'])
     # print(lmka['A'])
     # print(lib)
+    lib = Library()
     print(len(lmk))
-    print(lmk['Zy-R'])
+    print(lmk)
+    print(lib)
 #     parser = argparse.ArgumentParser(allow_abbrev=True)
 #     parser.add_argument('--input', type=str, nargs='?')
 #     parser.add_argument('--output', type=str, nargs='?')
@@ -727,3 +735,25 @@ if __name__=='__main__':
 #     else:            
 #         sys.stdout.write(lmk_str)
 
+    t = np.random.rand(3,)
+    R = np.random.rand(3,3)
+    c = np.random.rand(3,).tolist()
+    PP = landmark([*zip(iter('abcdefghij'),np.random.rand(10,3))])
+    premul = True
+    def test(x):
+        x.translate(t)
+        x.rotate(R, pre_multiply=premul, center=c)
+
+    test(PP)
+    print(PP)
+
+    print(len(PP[2]['name']), type(PP[2]['name']), isinstance(PP[2]['name'], str), isinstance(PP[2]['coordinates'][2], float))
+
+    PPnew = PP.append(('x',(1,2,3)))
+    print(PPnew)
+    print(PPnew.dtype)
+    k = namedarray().append(('x',(1,2,3)),('y',(4,5,6)))
+    print(k.dtype)
+    print(PP.get('a'))
+    print(PP.set('z',(4,5,6)))
+    print(PP)
