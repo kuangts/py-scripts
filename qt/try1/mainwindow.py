@@ -1,10 +1,26 @@
 # This Python file uses the following encoding: utf-8
 import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QTreeWidget, QFrame, QGridLayout, QGraphicsView, QWidget, QTreeWidgetItem, QLabel, QVBoxLayout
-from ui_mainwindow import Ui_MainWindow
 from PySide6 import QtGui
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QTreeWidget,
+    QFrame,
+    QGridLayout,
+    QGraphicsView,
+    QWidget,
+    QTreeWidgetItem,
+    QLabel,
+    QVBoxLayout
+)
+from ui_mainwindow import Ui_MainWindow
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
-from vtk import vtkRenderer, vtkActor, vtkSphereSource, vtkPolyDataMapper
+from vtk import (
+    vtkRenderer,
+    vtkActor,
+    vtkSphereSource,
+    vtkPolyDataMapper
+)
 import landmark
 
 class LandmarkSideWindow(QMainWindow):
