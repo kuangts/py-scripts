@@ -1,0 +1,9 @@
+{
+    "default_db_location": "C:\\py-scripts\\CASS.db",
+    "soft_tissue_labels_23": [
+        "Gb'", "Ls", "Sl", "En-R", "Stm-L", "Zy'-L", "Stm-U", "Go'-L", "Ex-R", "Sn",
+        "Prn", "Pog'", "Ex-L", "Go'-R", "En-L", "Li", "CM", "N'", "Ch-R", "Me'",
+        "C", "Zy'-R", "Ch-L"
+    ]
+
+}
