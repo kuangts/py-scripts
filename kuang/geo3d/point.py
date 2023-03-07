@@ -1,8 +1,9 @@
 
 import numpy as np
-from ..geobase.transform import Transformable3D, Transform3D
+from .transform import Transform, Transformable
 
-class pointarray(np.ndarray, Transformable3D):
+
+class PointArray(np.ndarray, Transformable):
 
     def __new__(cls, arr):
         return np.array(arr).reshape(-1,3).view(cls)
@@ -15,15 +16,59 @@ class pointarray(np.ndarray, Transformable3D):
     def nx3(self, nx3: np.ndarray):
         self[...] = nx3[:]
 
+    # coordinates return the same array as nx3
+    # but a copy
+    @property
+    def coordinates(self):
+        return self.nx3.view(PointArray).copy()
 
-class namedarray(pointarray):
+    @coordinates.setter
+    def coordinates(self, arr: np.ndarray) -> None:
+        self.nx3 = arr
+        return None
+
+    @property
+    def centroid(self):
+        return self.nx3.mean(axis=0, keepdims=True)
+
+    def transform(self, T:Transform) -> None:
+        if T.pre_multiply:
+            T = T.T
+        self.nx4 = self.nx4@T
+        return None
+
+    def translate(self, t) -> None:
+        self.nx3 = self.nx3 + np.array(t).reshape(1,3)
+        return None
+    
+    def rotate(self, R, pre_multiply=False, center=None) -> None: 
+        R = np.asarray(R)
+        T = Transform(pre_multiply=pre_multiply)
+        if center is not None:
+            c = np.array(center)
+            T.translate(-c)
+            T.rotate(R)
+            T.translate(c)
+        else:
+            T.rotate(R)
+        self.transform(T)
+        return None
+
+    def scale(self, s: float, center=None) -> None:
+        self.nx3 = self.nx3 * s
+        if center is not None:
+            self.translate(np.array(center) * (1-s))
+        return None
+
+
+class NamedArray(PointArray):
 
     dtype = np.dtype([('name', str, 16), ('coordinates', float, (3,))])
 
     def __new__(cls, *name_coord_pairs, dtype=None):
         '''usage:
             1. namedarray( object )
-                object can be zipped name and coordinates pairs, dict of name:coordinates, existing namedarray's
+                object can be zipped name and coordinates pairs, dict of name:coordinates, existing namedarrays
             2. namedarray( (n1,p1), (n2,p2), ...)
         '''        
         if len(name_coord_pairs) == 1:
@@ -45,10 +90,10 @@ class namedarray(pointarray):
     
     @property
     def nx3(self):
-        return self['coordinates'].view(pointarray)
+        return self['coordinates']
 
     @nx3.setter
-    def nx3(self, nx3: pointarray):
+    def nx3(self, nx3: np.ndarray):
         self['coordinates'][:] = nx3[:]
 
 
@@ -56,15 +101,15 @@ def test():
     R = np.random.rand(3,3)
     c = np.random.rand(3,).tolist()
     t = np.random.rand(3,).tolist()
-    P = pointarray(np.random.rand(10,3))
-    PP = namedarray(zip('abcdefghij',P))
+    P = PointArray(np.random.rand(10,3))
+    PP = NamedArray(zip('abcdefghij',P))
     premul = True
     def test(x):
         x.translate(t)
         x.rotate(R, pre_multiply=premul, center=c)
 
     test(P)
-    T = Transform3D(pre_multiply=premul)
+    T = Transform(pre_multiply=premul)
     test(T)
 
     print(P)
@@ -76,7 +121,7 @@ def test():
     PPnew = PP.append(('x',(1,2,3)))
     print(PPnew)
     print(PPnew.dtype)
-    k = namedarray().append(('x',(1,2,3)),('y',(4,5,6)))
+    k = NamedArray().append(('x',(1,2,3)),('y',(4,5,6)))
     print(type(k))
     print(k.dtype)    
 

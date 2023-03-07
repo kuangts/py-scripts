@@ -6,7 +6,7 @@ from operator import attrgetter
 
 import numpy
 
-class library(frozenset):
+class Library(frozenset):
     """
     immutable set containing immutable landmark definition
     this class is to bridge landmark database (CASS.db) and landmark manipulation in python.
@@ -14,12 +14,6 @@ class library(frozenset):
     this is a subclass of Set/forzenset and therefore it is, again
     IMMUTABLE and UNORDERED
     """
-
-    with open(os.path.join(os.path.dirname(__file__), 'config.json'), 'r') as f:
-        _defaults = json.load(f)
-
-    db_location = _defaults['default_db_location']
-    soft_tissue_labels_23 = _defaults['soft_tissue_labels_23']
 
     landmark_entry_fields = ('ID','M','Category','Group','Name','Fullname','Description','Coordinate','View','DP') # corresponding to the db
 
@@ -59,7 +53,10 @@ class library(frozenset):
         elif isinstance(db_location_or_existing_set, str): 
             location = db_location_or_existing_set
             if not location:
-                location = cls.db_location
+                try:
+                    location = cls.db_location
+                except Exception as e:
+                    raise ValueError('cannot find db')
             with sqlite3.connect(location) as con:
                 # select all from table Landmark_Library
                 # unpack the resulting cursor object
@@ -225,9 +222,6 @@ class library(frozenset):
 
     def computed(self):
         return self.filter(lambda x: "'" in x.Name)
-
-    def soft_tissue_23(self):
-        return self.filter(lambda x: x.Name in self.soft_tissue_labels_23)
         
     def skeletal(self):
         return self.filter(lambda x: x.Category == 'Skeletal')
@@ -260,7 +254,7 @@ class library(frozenset):
     class LDMK(LDMK):
 
         def print_str(self):
-            d = dict(zip(library.landmark_entry_fields, (
+            d = dict(zip(Library.landmark_entry_fields, (
                 f'[{self.ID:>3}]',
                 f'{self.M}',
                 f'{self.Category}',
@@ -300,5 +294,5 @@ class library(frozenset):
 
 
 if __name__=='__main__':
-    lib = library()
+    lib = Library()
     

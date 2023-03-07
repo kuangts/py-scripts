@@ -3,7 +3,7 @@ import numpy as np
 
 # add pitch roll yaw
 
-class Transform3D(np.ndarray):
+class Transform(np.ndarray):
     # transformation matrix for geometric objects
     # similarity transformation only
 
@@ -15,7 +15,7 @@ class Transform3D(np.ndarray):
             T.pre_multiply = True
         return T
 
-    def transform(self, T: "Transform3D"):
+    def transform(self, T: "Transform"):
         if T.pre_multiply != self.pre_multiply:
             T = T.T
         self[...] = T@self if self.pre_multiply else self@T
@@ -50,7 +50,8 @@ class Transform3D(np.ndarray):
         self[3, 3] = self[3, 3] / s
         return None
         
-class Transformable3D(ABC):
+
+class Transformable(ABC):
 
     # IMPLEMENT THESE ABSTRACT METHOD
     @property
@@ -59,7 +60,7 @@ class Transformable3D(ABC):
     # avoid unintended change of the returned array
     # safest way is to copy coordinates into new array
     # mainly for internal use
-    def nx3(self): pass 
+    def nx3(self): pass
 
     @nx3.setter
     @abstractmethod
@@ -76,46 +77,15 @@ class Transformable3D(ABC):
         self.nx3 = nx4[:,:3]
         return None
     
-    # coordinates return the same array as nx3
-    @property
-    def coordinates(self):
-        return self.nx3.copy()
+    @abstractmethod
+    def transform(self, T:Transform) -> None: pass
 
-    @coordinates.setter
-    def coordinates(self, arr: np.ndarray):
-        self.nx3 = arr
-
-
-    @property
-    def centroid(self):
-        return self.nx3.mean(axis=0, keepdims=True)
-
-    def transform(self, T: Transform3D):
-        if T.pre_multiply:
-            T = T.T
-        self.nx4 = self.nx4@T
-        return None
-
-    def translate(self, t):
-        self.nx3 = self.nx3 + np.array(t).reshape(1,3)
-        return None
+    @abstractmethod
+    def translate(self, t) -> None: pass
     
-    def rotate(self, R, pre_multiply=False, **kwargs): 
-        R = np.asarray(R)
-        T = Transform3D(pre_multiply=pre_multiply)
-        if 'center' in kwargs:
-            c = np.array(kwargs['center'])
-            T.translate(-c)
-            T.rotate(R)
-            T.translate(c)
-        else:
-            T.rotate(R)
-        self.transform(T)
-        return None
+    @abstractmethod
+    def rotate(self, R, pre_multiply=False, center=None, **kwargs) -> None:  pass
 
-    def scale(self, s: float, **kwargs):
-        self.nx3 = self.nx3 * s
-        if 'center' in kwargs:
-            self.translate(np.array(kwargs['center']) * (1-s))
-        return None
+    @abstractmethod
+    def scale(self, s: float, **kwargs) -> None: pass
 

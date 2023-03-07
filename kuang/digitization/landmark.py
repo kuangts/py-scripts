@@ -5,11 +5,10 @@ import numpy as np
 import pandas
 import rarfile
 
-from .library import library
-from ..geobase.point import namedarray
+from ..geo3d.point import NamedArray
 
 
-class landmark(namedarray):
+class Landmark(NamedArray):
     '''this class is one of the two primary ways of storing landmark information, the other being `Library`
     it facilitates calculation using landmark coordinates without changing size or order of the ladnarmk set
     it provides get and set methods for working with coordinates of existing landmarks
@@ -330,7 +329,7 @@ class landmark(namedarray):
 
 if __name__=='__main__':
 
-    lmk = landmark.from_text(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Desktop\extracted_from_cass.csv')
+    lmk = Landmark.from_text(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Desktop\extracted_from_cass.csv')
     # lmk = lmk.bilateral()
     # lmk.transform(np.eye(3))
     # lmk.transform(np.eye(4)).field('Coordinate')
@@ -389,7 +388,7 @@ if __name__=='__main__':
     t = np.random.rand(3,)
     R = np.random.rand(3,3)
     c = np.random.rand(3,).tolist()
-    PP = landmark([*zip(iter('abcdefghij'),np.random.rand(10,3))])
+    PP = Landmark([*zip(iter('abcdefghij'),np.random.rand(10,3))])
     premul = True
     def test(x):
         x.translate(t)
@@ -403,7 +402,7 @@ if __name__=='__main__':
     PPnew = PP.append(('x',(1,2,3)))
     print(PPnew)
     print(PPnew.dtype)
-    k = namedarray().append(('x',(1,2,3)),('y',(4,5,6)))
+    k = NamedArray().append(('x',(1,2,3)),('y',(4,5,6)))
     print(k.dtype)
     print(PP.get('a'))
     print(PP.set('z',(4,5,6)))
