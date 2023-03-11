@@ -26,19 +26,16 @@ from vtkmodules.vtkRenderingCore import (
 )
 from vtkmodules.vtkCommonExecutionModel import vtkAlgorithmOutput
 from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
-import landmark
-from landmark import vtkLandmark, LandmarkDict
 import vtk
 import numpy as np
 from scipy.spatial  import KDTree
 
 
-lmk_lib = landmark.Library()
 colors = vtkNamedColors()
 
 
 class Model:
-    def __init__(self, data_or_dataport, make_actor=True, color=colors.GetColor3d('yellow'), transform=None):
+    def __init__(self, data_or_dataport, make_actor=True, color=None, transform=None):
         # transform Model should only affect said Model, unless otherwise intended
         # set_matrix on MatrixTransform should affect all models using the same instance
 
@@ -53,21 +50,22 @@ class Model:
         elif isinstance(data_or_dataport, vtkPolyData):
             T.SetInputData(data_or_dataport)
             T.Update()
-            self.inputport = None
+            self.input = data_or_dataport
         else:
             raise ValueError('Model: wrong type of data')
         self.outputport = T.GetOutputPort()
-        # self.outputport.SetProducer(T)
+        self.output = T.GetOutput()
         self.filter = T
 
         if make_actor:
             mapper = vtkPolyDataMapper()
-            mapper.SetInputConnection(T.GetOutputPort())
+            mapper.SetInputConnection(self.outputport)
             mapper.Update()
             actor = vtkActor()
             actor.SetMapper(mapper)
             self.actor = actor
-            self.actor.GetProperty().SetColor(*color)
+            if color is not None:
+                self.actor.GetProperty().SetColor(*color)
         else:
             self.actor = None
 
@@ -121,6 +119,86 @@ class MatrixTransform(vtkMatrixToLinearTransform): # vtk uses pre-multiplication
 
 class Visualizer():
 
+    def __init__(self):
+
+        # create window 
+        renderer = vtkRenderer()
+        renderer.SetBackground(colors.GetColor3d('paleturquoise'))
+        ren_win = vtkRenderWindow()
+        ren_win.AddRenderer(renderer)
+        ren_win.SetSize(640, 480)
+        ren_win.SetWindowName('')
+        iren = vtkRenderWindowInteractor()
+        iren.SetRenderWindow(ren_win)
+        style = vtkInteractorStyleTrackballCamera()
+        style.SetDefaultRenderer(renderer)
+        iren.SetInteractorStyle(style)
+
+        self.ren = renderer
+        self.ren_win = ren_win
+        self.iren = iren
+        self.style = style
+        self.actors = {}
+
+        # text box for status update, soon to be replaced by PyQt
+        self.status = vtkTextActor()
+        # self.status.SetPosition2(10, 40)
+        self.status.GetTextProperty().SetFontSize(16)
+        self.status.GetTextProperty().SetColor(colors.GetColor3d("Black"))
+        self.ren.AddActor2D(self.status)
+
+        self.ren_win.AddObserver('ModifiedEvent', self.position_panel)
+        self.position_panel()
+
+    def start(self):
+        self.iren.Initialize()
+        self.ren_win.Render()
+        self.iren.Start()
+
+    def position_panel(self, obj=None, event=None):
+        s = self.ren_win.GetSize()
+        s0 = [float('nan')]*2
+        self.status.GetSize(self.ren, s0)
+        # self.status.SetPosition(s[0]*.8,s[1]*.9-s0[1])
+        self.status.SetPosition(0,0)
+
+    def add_actor(self, renderer=None, **actor_dict):
+        if renderer is None:
+            renderer = self.ren
+        for k,v in actor_dict.items():
+            renderer.AddActor(v)
+            self.actors[k] = v
+
+    def remove_actor(self, renderer=None, *actor_names):
+        if renderer is None:
+            renderer = self.ren
+        for k in actor_names:
+            renderer.RemoveActor(self.actors[k])
+            del self.actors[k]
+
+
+def run_20230216(pre, post, T):
+    d = Visualizer()
+    reader_pre = vtkNIFTIImageReader()
+    reader_pre.SetFileName(pre)
+    reader_pre.Update()
+    bone_pre = d.generate_mdoel_from_volume(reader_pre, preset='skin')
+
+    reader_post = vtkNIFTIImageReader()
+    reader_post.SetFileName(post)
+    reader_post.Update()
+    bone_post = d.generate_mdoel_from_volume(reader_post, preset='skin')
+    
+    bone_post.set_transform(MatrixTransform(np.genfromtxt(T)))
+
+    d.add_actor(bone_pre=bone_pre.actor)
+    d.add_actor(bone_post=bone_post.actor)
+
+    d.start()
+
+
+class Digitizer(Visualizer):
+    
     @staticmethod
     def load_landmark(file, ordered_list=None):
         # read existing file if any
@@ -221,82 +299,7 @@ class Visualizer():
         return vtk_lmk
 
 
-    def __init__(self):
 
-        # create window 
-        renderer = vtkRenderer()
-        renderer.SetBackground(colors.GetColor3d('paleturquoise'))
-        ren_win = vtkRenderWindow()
-        ren_win.AddRenderer(renderer)
-        ren_win.SetSize(640, 480)
-        ren_win.SetWindowName('Lip Landmarks')
-        iren = vtkRenderWindowInteractor()
-        iren.SetRenderWindow(ren_win)
-        style = vtkInteractorStyleTrackballCamera()
-        style.SetDefaultRenderer(renderer)
-        iren.SetInteractorStyle(style)
-
-        self.ren = renderer
-        self.ren_win = ren_win
-        self.iren = iren
-        self.style = style
-        self.actors = {}
-
-        # text box for status update, soon to be replaced by PyQt
-        self.status = vtkTextActor()
-        # self.status.SetPosition2(10, 40)
-        self.status.GetTextProperty().SetFontSize(16)
-        self.status.GetTextProperty().SetColor(colors.GetColor3d("Black"))
-        self.ren.AddActor2D(self.status)
-
-        self.ren_win.AddObserver('ModifiedEvent', self.position_panel)
-        self.position_panel()
-
-    def start(self):
-        self.iren.Initialize()
-        self.ren_win.Render()
-        self.iren.Start()
-
-    def position_panel(self, obj=None, event=None):
-        s = self.ren_win.GetSize()
-        s0 = [float('nan')]*2
-        self.status.GetSize(self.ren, s0)
-        # self.status.SetPosition(s[0]*.8,s[1]*.9-s0[1])
-        self.status.SetPosition(0,0)
-
-    def add_actor(self, renderer=None, **actor_dict):
-        if renderer is None:
-            renderer = self.ren
-        for k,v in actor_dict.items():
-            renderer.AddActor(v)
-            self.actors[k] = v
-
-    def remove_actor(self, renderer=None, *actor_names):
-        if renderer is None:
-            renderer = self.ren
-        for k in actor_names:
-            renderer.RemoveActor(self.actors[k])
-            del self.actors[k]
-
-
-def run_20230216(pre, post, T):
-    d = Visualizer()
-    reader_pre = vtkNIFTIImageReader()
-    reader_pre.SetFileName(pre)
-    reader_pre.Update()
-    bone_pre = d.generate_mdoel_from_volume(reader_pre, preset='skin')
-
-    reader_post = vtkNIFTIImageReader()
-    reader_post.SetFileName(post)
-    reader_post.Update()
-    bone_post = d.generate_mdoel_from_volume(reader_post, preset='skin')
-    
-    bone_post.set_transform(MatrixTransform(np.genfromtxt(T)))
-
-    d.add_actor(bone_pre=bone_pre.actor)
-    d.add_actor(bone_post=bone_post.actor)
-
-    d.start()
 
 
 if __name__ == '__main__':

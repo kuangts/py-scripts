@@ -96,7 +96,7 @@ def icp_o3d(SRC, TAR):
     return (reg_p2p.inlier_rmse, T)
 
 
-def nicp(SRC, TAR, iterations=20):
+def nicp(SRC, TAR, iterations=20, return_error=False):
     icp = lambda *args: (0., args[0], Transform()) # disable icp for our particular use since two surfaces are aligned
 
     if isinstance(SRC, str):
@@ -185,11 +185,15 @@ def nicp(SRC, TAR, iterations=20):
 
         SRC.V = v_src + sum((SRC.V[:,None,:].transform(T).squeeze() - v_src) * vn_src, axis=1, keepdims=True) * vn_src * pace
 
+
         # end of iteration, keep result for next
         v_src[...] = SRC.V
         vn_src[...] = SRC.VN
 
     SRC.V = np.ascontiguousarray(SRC.V)
+    if return_error:
+
+        return SRC, SRC.V - TAR.V[tar_nn(SRC.V)]
     return SRC
 
 

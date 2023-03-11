@@ -1,23 +1,45 @@
+from collections.abc import Sequence
 
 import numpy as np
 from .transform import Transform, Transformable
-
+from vtkmodules.vtkCommonCore import vtkFloatArray, vtkDoubleArray, vtkPoints
 
 class PointArray(np.ndarray, Transformable):
 
-    def __new__(cls, arr):
-        return np.array(arr).reshape(-1,3).view(cls)
+    def __new__(cls, data=()):
+        if isinstance(data, vtkPoints):
+            arr = np.empty((data.GetNumberOfPoints(),3), dtype=np.float64).view(cls)
+            arr.nx3 = data
+        else:
+            arr = np.array(data, dtype=float).reshape(-1,3).view(cls)
+        return arr
     
     @property
     def nx3(self):
         return self
 
     @nx3.setter
-    def nx3(self, nx3: np.ndarray):
-        self[...] = nx3[:]
+    def nx3(self, nx3):
+        if isinstance(nx3, Sequence):
+            nx3 = np.array(nx3)
+        if isinstance(nx3, np.ndarray):
+            self[...] = nx3
+        elif isinstance(nx3, vtkPoints):
+            d = nx3.GetData()
+            if d.GetNumberOfTuples() != len(self):
+                raise ValueError('size mismatch')
+            if isinstance(d, vtkFloatArray):
+                self[...] = np.frombuffer(d, dtype=np.float32).reshape(-1,3)
+            elif isinstance(d, vtkDoubleArray):
+                self[...] = np.frombuffer(d, dtype=np.float64).reshape(-1,3)
+            else:
+                raise ValueError('can only set nx3 with vtk float or data array')
 
-    # coordinates return the same array as nx3
-    # but a copy
+        else:
+            raise ValueError('cannot set nx3')
+
+    # coordinates getter returns a COPY of nx3
+    # the returned value should always be safe
     @property
     def coordinates(self):
         return self.nx3.view(PointArray).copy()
@@ -63,7 +85,7 @@ class PointArray(np.ndarray, Transformable):
 
 class NamedArray(PointArray):
 
-    dtype = np.dtype([('name', str, 16), ('coordinates', float, (3,))])
+    dtype = np.dtype([('name', str, 12), ('coordinates', float, (3,))])
 
     def __new__(cls, *name_coord_pairs, dtype=None):
         '''usage:
@@ -90,40 +112,52 @@ class NamedArray(PointArray):
     
     @property
     def nx3(self):
-        return self['coordinates']
+        return self['coordinates'].view(np.ndarray)
 
     @nx3.setter
     def nx3(self, nx3: np.ndarray):
-        self['coordinates'][:] = nx3[:]
+        self['coordinates'].view(PointArray).nx3 = nx3
 
 
 def test():
-    R = np.random.rand(3,3)
-    c = np.random.rand(3,).tolist()
-    t = np.random.rand(3,).tolist()
-    P = PointArray(np.random.rand(10,3))
-    PP = NamedArray(zip('abcdefghij',P))
-    premul = True
-    def test(x):
-        x.translate(t)
-        x.rotate(R, pre_multiply=premul, center=c)
+    p = vtkPoints()
+    p.InsertNextPoint(0,1,2)
+    p.InsertNextPoint(1,2,3)
+    x = NamedArray(zip(('x','y'), np.zeros((2,3))))
+    print(x)
+    x.nx3 = p
+    x.nx3[:,1] = 2
+    print(x)
+    x.nx3 = p
+    print(x)
+    x.nx3 = ((1,2,3),(2,3,4))
+    print(x)
+    # R = np.random.rand(3,3)
+    # c = np.random.rand(3,).tolist()
+    # t = np.random.rand(3,).tolist()
+    # P = PointArray(np.random.rand(10,3))
+    # PP = NamedArray(zip('abcdefghij',P))
+    # premul = True
+    # def test(x):
+    #     x.translate(t)
+    #     x.rotate(R, pre_multiply=premul, center=c)
 
-    test(P)
-    T = Transform(pre_multiply=premul)
-    test(T)
+    # test(P)
+    # T = Transform(pre_multiply=premul)
+    # test(T)
 
-    print(P)
-    PP.transform(T)
-    print(PP)
-    print(len(PP[2]['name']), type(PP[2]['name']), isinstance(PP[2]['name'], str), isinstance(PP[2]['coordinates'][2], float))
-    print(np.all(np.isclose(P.nx3,PP.nx3)))
+    # print(P)
+    # PP.transform(T)
+    # print(PP)
+    # print(len(PP[2]['name']), type(PP[2]['name']), isinstance(PP[2]['name'], str), isinstance(PP[2]['coordinates'][2], float))
+    # print(np.all(np.isclose(P.nx3,PP.nx3)))
 
-    PPnew = PP.append(('x',(1,2,3)))
-    print(PPnew)
-    print(PPnew.dtype)
-    k = NamedArray().append(('x',(1,2,3)),('y',(4,5,6)))
-    print(type(k))
-    print(k.dtype)    
+    # PPnew = PP.append(('x',(1,2,3)))
+    # print(PPnew)
+    # print(PPnew.dtype)
+    # k = NamedArray().append(('x',(1,2,3)),('y',(4,5,6)))
+    # print(type(k))
+    # print(k.dtype)    
 
 
 if __name__=='__main__':

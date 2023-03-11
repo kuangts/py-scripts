@@ -58,15 +58,15 @@ class Transformable(ABC):
     @abstractmethod
     # expose coordinates to calculation
     # avoid unintended change of the returned array
-    # safest way is to copy coordinates into new array
-    # mainly for internal use
+    # nx3 getter directly returns self, NO COPY
+    # it is user's responsibility to use this property safely
     def nx3(self): pass
 
     @nx3.setter
     @abstractmethod
     # set coordinates after calculation
     # alters self
-    def nx3(self, nx3 : np.ndarray): pass # to set coordinates
+    def nx3(self, nx3: np.ndarray): pass
 
     @property
     def nx4(self): # convenience getter

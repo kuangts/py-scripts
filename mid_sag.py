@@ -1,4 +1,5 @@
 import numpy as np
+import scipy
 from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkIOGeometry import vtkSTLReader
 from vtkmodules.vtkFiltersSources import vtkSphereSource, vtkPlaneSource
@@ -31,8 +32,11 @@ from numpy import all, any, eye, sum, mean, sort, unique, bincount, isin, exp, i
 from scipy.spatial import KDTree, distance_matrix
 from numpy.linalg import svd, det, solve
 
+import matplotlib.pyplot as plt
+from matplotlib import colors
+from matplotlib.ticker import PercentFormatter
 
-import sys, os, glob
+import sys, os, glob, json
 from collections import namedtuple
 from vtkmodules.vtkFiltersSources import vtkSphereSource 
 from vtkmodules.vtkCommonColor import vtkNamedColors
@@ -42,7 +46,7 @@ from vtkmodules.vtkIOGeometry import vtkSTLReader
 from vtkmodules.vtkFiltersCore import vtkFlyingEdges3D
 from vtkmodules.vtkCommonDataModel import vtkPointSet
 from vtkmodules.vtkCommonMath import vtkMatrix4x4
-from vtkmodules.vtkCommonCore import vtkPoints, reference, vtkPoints, vtkIdList
+from vtkmodules.vtkCommonCore import vtkPoints, reference, vtkPoints, vtkIdList, vtkUnsignedCharArray
 from vtkmodules.vtkInteractionWidgets import vtkPointCloudRepresentation, vtkPointCloudWidget
 from vtkmodules.vtkCommonTransforms import vtkMatrixToLinearTransform, vtkTransform
 from vtkmodules.vtkFiltersGeneral import vtkTransformPolyDataFilter, vtkTransformFilter
@@ -61,8 +65,6 @@ from vtkmodules.vtkRenderingCore import (
     vtkRenderer
 )
 from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
-import landmark
-from landmark import vtkLandmark, LandmarkDict
 import vtk
 import numpy as np
 from scipy.spatial  import KDTree
@@ -90,7 +92,10 @@ def polydata_to_numpy(polydata):
 
 
 class ChestVisualizer(vtk_basic.Visualizer):
-        
+    
+    with open('c:\py-scripts\kuang\config.json','r') as f:
+        colors_jet = np.asarray(json.load(f)['colors_jet'])
+
     @staticmethod
     def decimate(v, f):
         mesh_simplifier = pyfqmr.Simplify()
@@ -168,8 +173,7 @@ class ChestVisualizer(vtk_basic.Visualizer):
         _cleaner.Update()
         self.half1 = Model(_cleaner.GetOutputPort(), color=colors.GetColor3d('green'))
         
-        self.half1m = Model(self.half1.outputport, color=colors.GetColor3d('blue'), transform=self.mirror)
-
+        self.half1m = Model(self.half1.outputport, transform=self.mirror)
 
         #### DISPLAY HALF MODELS ####
         self.add_actor(
@@ -179,7 +183,8 @@ class ChestVisualizer(vtk_basic.Visualizer):
         )
         self.update_plane()
         self.ren_win.Render()
-        self.register()
+        # self.register()
+        pass
 
 
     def key_press_event(self, obj, event):
@@ -194,6 +199,58 @@ class ChestVisualizer(vtk_basic.Visualizer):
         normal = np.array(self.plane.GetNormal())
         T = np.eye(4) - 2 * np.array([[*normal,0]]).T @ np.array([[ *normal, -origin.dot(normal) ]])
         self.mirror.update_matrix(T)
+        self.ren_win.Render()
+        print(self.half1m.output.GetPoints().GetNumberOfPoints())
+        err_range = (0,30)
+
+        tar = polydata_to_numpy(self.half0.output)
+        polyd = polydata_to_numpy(self.half1m.output)
+        _, tar_nn = KDTree(tar.nodes).query(polyd.nodes,k=1)
+        err = tar.nodes[tar_nn.flatten()] - polyd.nodes
+        err = (err**2).sum(axis=1)**.5
+
+
+        arr, edgs = np.histogram(err, bins=100)
+        edgs = edgs[0:-1]/2 + edgs[1:]/2
+
+        shown = True
+        if not hasattr(self, 'fig'):
+            self.fig = plt.figure()
+            self.ax = plt.gca()
+            shown = False
+        plt.gca()
+        self.ax.bar(edgs, arr)
+        if not shown :
+            plt.show()
+
+
+        err[err>err_range[1]] = err_range[1]
+        err[err<err_range[0]] = err_range[0]
+        err = (err-err.min()) / (err.max()-err.min())
+        x = np.linspace(0,1,len(self.colors_jet))
+        err = np.asarray([
+            np.interp(err, x, self.colors_jet[:,0]),
+            np.interp(err, x, self.colors_jet[:,1]),
+            np.interp(err, x, self.colors_jet[:,2]),
+        ]).T
+
+        c = vtkUnsignedCharArray()
+        c = numpy_to_vtk(np.round(err*255).astype(np.uint8), deep=0, array_type=c.GetDataType())
+        c.SetNumberOfComponents(3)
+        c.SetName('Colors')
+        print(c.GetDataType())
+        print(c.GetNumberOfTuples())
+        print(c)
+        print(np.round(err*255))
+        # for e in err.tolist():
+        #     print(e)
+        #     c.InsertNextTuple3(*e)
+        # self.actors['half1m'].VisibilityOff()
+        self.half1m.output.GetPointData().SetScalars(c)
+        c.Modified()
+        self.half1m.output.GetPointData().SetActiveScalars('Colors')
+
+
 
 
     @staticmethod
@@ -207,12 +264,10 @@ class ChestVisualizer(vtk_basic.Visualizer):
     @staticmethod
     def nicp(tar, src):
         src_reg = deepcopy(src)
-        print(src_reg.nodes.shape)
         reg = nicp(
             dict(V=src_reg.nodes,F=src_reg.faces),
             dict(V=tar.nodes,F=tar.faces))
         src_reg.nodes = reg.V
-        print(src_reg.nodes.shape)
         return src_reg
 
     @staticmethod
@@ -229,13 +284,13 @@ class ChestVisualizer(vtk_basic.Visualizer):
 
     def register(self):
 
-        srcm = self.half1m.outputport.GetProducer().GetOutput()
-        src = self.half1.outputport.GetProducer().GetOutput()
-        tar = self.half0.outputport.GetProducer().GetOutput()
+        srcmm = self.half1m.output
+        src = self.half1.output
+        tar = self.half0.output
         reg_vtk = vtkPolyData()
-        reg_vtk.DeepCopy(srcm)
+        reg_vtk.DeepCopy(srcmm)
 
-        srcm =  polydata_to_numpy(srcm)
+        srcm =  polydata_to_numpy(srcmm)
         src =  polydata_to_numpy(src)
         tar =  polydata_to_numpy(tar)
         
@@ -246,9 +301,8 @@ class ChestVisualizer(vtk_basic.Visualizer):
             del self.half1r
 
         reg_vtk.GetPoints().SetData(numpy_to_vtk(reg.nodes))
-        # self.actors['half1m'].VisibilityOff()
-        self.half1r = Model(reg_vtk, color=colors.GetColor3d('yellow'))
-        self.add_actor(half1r=self.half1r.actor)
+        # self.half1r = Model(reg_vtk)
+        # self.add_actor(half1r=self.half1r.actor)
 
         midpts = vtkPoints()
         midpts.SetData(numpy_to_vtk( src.nodes/2 + reg.nodes/2 ))
@@ -257,6 +311,35 @@ class ChestVisualizer(vtk_basic.Visualizer):
         self.plane_rep.SetOrigin(*origin)
         self.plane_rep.SetNormal(*normal)
         self.update_plane()
+
+
+
+        # tar = polydata_to_numpy(self.half0.output)
+        # polyd = polydata_to_numpy(self.half1m.output)
+        # _, tar_nn = KDTree(tar.nodes).query(polyd.nodes,k=1)
+        # err = tar.nodes[tar_nn.flatten()]
+        # err = (err**2).sum(axis=1)**.5
+        # err[err>err_range[1]] = err_range[1]
+        # err[err<err_range[0]] = err_range[0]
+        # err = (err-err.min()) / (err.max()-err.min())
+        # x = np.linspace(0,1,len(self.colors_jet))
+        # err = np.asarray([
+        #     np.interp(err, x, self.colors_jet[:,0]),
+        #     np.interp(err, x, self.colors_jet[:,1]),
+        #     np.interp(err, x, self.colors_jet[:,2]),
+        # ]).T
+
+        # err = np.round(err*255).astype(int)
+        # c = vtkUnsignedCharArray()
+        # c.SetNumberOfComponents(3)
+        # c.SetName('Colors')
+        # for e in err.tolist():
+        #     c.InsertNextTuple3(*e)
+        # # self.actors['half1m'].VisibilityOff()
+        # srcmm = self.half1m.outputport.GetProducer().GetOutput()
+        # srcmm.GetPointData().SetScalars(c)
+        # srcmm.GetPointData().SetActiveScalars('Colors')
+
         self.ren_win.Render()
 
 
