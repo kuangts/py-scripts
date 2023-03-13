@@ -42,6 +42,7 @@ from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 # from .digitization import landmark
 
 
+
 class VtkCompatible:
     # renderer, interactor, actors (dictionary)
     def display_dummy(self):
