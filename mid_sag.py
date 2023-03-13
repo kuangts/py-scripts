@@ -71,15 +71,30 @@ from scipy.spatial  import KDTree
 import vtk_basic
 from vtk_basic import MatrixTransform, Model, colors
 from copy import deepcopy
-import pyfqmr
+# import pyfqmr
 
 
 from functools import partial
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from pycpd import DeformableRegistration
+# from pycpd import DeformableRegistration
 from argparse import Namespace as encap
 import saikiran321
+
+
+error_range = (0,30)
+def get_jet_color(normalized_values):
+    x = [0.0, 0.125, 0.375, 0.625, 0.875, 1.0]
+    r = [0.0, 0.0, 0.0, 1.0, 1.0, 0.5]
+    g = [0.0, 0.0, 1.0, 1.0, 0.0, 0.0]
+    b = [0.5, 1.0, 1.0, 0.0, 0.0, 0.0]
+    rgb = np.asarray((
+        np.interp(normalized_values, x, r),
+        np.interp(normalized_values, x, g),
+        np.interp(normalized_values, x, b),
+    )).T
+    return rgb
+
 
 def polydata_to_numpy(polydata):
     numpy_nodes = vtk_to_numpy(polydata.GetPoints().GetData())
@@ -93,9 +108,6 @@ def polydata_to_numpy(polydata):
 
 class ChestVisualizer(vtk_basic.Visualizer):
     
-    with open('c:\py-scripts\kuang\config.json','r') as f:
-        colors_jet = np.asarray(json.load(f)['colors_jet'])
-
     @staticmethod
     def decimate(v, f):
         mesh_simplifier = pyfqmr.Simplify()
@@ -126,6 +138,9 @@ class ChestVisualizer(vtk_basic.Visualizer):
             reducer.SetTargetReduction(target_reduction)
             reducer.Update()
             port = reducer.GetOutputPort()
+
+        srfc = polydata_to_numpy(port.GetProducer().GetOutput())
+        self.tree = KDTree(srfc.nodes)
 
         #### INITIAL PLANE AND CAMERA ####
         self.plane = vtkPlane()
@@ -162,7 +177,7 @@ class ChestVisualizer(vtk_basic.Visualizer):
         self.clipper.Update()
 
         #### HALF MODELS ####
-        #### REMOVE DUPLICATE POITNS ####
+        #### REMOVE DUPLICATE POINTS ####
         _cleaner = vtk.vtkCleanPolyData()
         _cleaner.SetInputConnection(self.clipper.GetOutputPort(0))
         _cleaner.Update()
@@ -200,15 +215,9 @@ class ChestVisualizer(vtk_basic.Visualizer):
         T = np.eye(4) - 2 * np.array([[*normal,0]]).T @ np.array([[ *normal, -origin.dot(normal) ]])
         self.mirror.update_matrix(T)
         self.ren_win.Render()
-        print(self.half1m.output.GetPoints().GetNumberOfPoints())
-        err_range = (0,30)
-
-        tar = polydata_to_numpy(self.half0.output)
+        
         polyd = polydata_to_numpy(self.half1m.output)
-        _, tar_nn = KDTree(tar.nodes).query(polyd.nodes,k=1)
-        err = tar.nodes[tar_nn.flatten()] - polyd.nodes
-        err = (err**2).sum(axis=1)**.5
-
+        err, tar_nn = self.tree.query(polyd.nodes, k=1)
 
         arr, edgs = np.histogram(err, bins=100)
         edgs = edgs[0:-1]/2 + edgs[1:]/2
@@ -217,38 +226,22 @@ class ChestVisualizer(vtk_basic.Visualizer):
         if not hasattr(self, 'fig'):
             self.fig = plt.figure()
             self.ax = plt.gca()
-            shown = False
-        plt.gca()
-        self.ax.bar(edgs, arr)
-        if not shown :
+            self.bar = self.ax.bar(edgs, arr, width=.4)
             plt.show()
+        for b,a,e in zip(self.bar,arr,edgs):
+            b.set_height(a)
+            b.set_xy((e-b.get_width(),0))
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
 
-
-        err[err>err_range[1]] = err_range[1]
-        err[err<err_range[0]] = err_range[0]
-        err = (err-err.min()) / (err.max()-err.min())
-        x = np.linspace(0,1,len(self.colors_jet))
-        err = np.asarray([
-            np.interp(err, x, self.colors_jet[:,0]),
-            np.interp(err, x, self.colors_jet[:,1]),
-            np.interp(err, x, self.colors_jet[:,2]),
-        ]).T
-
-        c = vtkUnsignedCharArray()
-        c = numpy_to_vtk(np.round(err*255).astype(np.uint8), deep=0, array_type=c.GetDataType())
+        err = (err-error_range[0]) / (error_range[1]-error_range[0])
+        rgb = get_jet_color(err)
+        c = numpy_to_vtk(np.round(rgb*255).astype(np.uint8), array_type=3) # unsigned char array
         c.SetNumberOfComponents(3)
         c.SetName('Colors')
-        print(c.GetDataType())
-        print(c.GetNumberOfTuples())
-        print(c)
-        print(np.round(err*255))
-        # for e in err.tolist():
-        #     print(e)
-        #     c.InsertNextTuple3(*e)
-        # self.actors['half1m'].VisibilityOff()
         self.half1m.output.GetPointData().SetScalars(c)
-        c.Modified()
         self.half1m.output.GetPointData().SetActiveScalars('Colors')
+        c.Modified()
 
 
 
@@ -312,34 +305,6 @@ class ChestVisualizer(vtk_basic.Visualizer):
         self.plane_rep.SetNormal(*normal)
         self.update_plane()
 
-
-
-        # tar = polydata_to_numpy(self.half0.output)
-        # polyd = polydata_to_numpy(self.half1m.output)
-        # _, tar_nn = KDTree(tar.nodes).query(polyd.nodes,k=1)
-        # err = tar.nodes[tar_nn.flatten()]
-        # err = (err**2).sum(axis=1)**.5
-        # err[err>err_range[1]] = err_range[1]
-        # err[err<err_range[0]] = err_range[0]
-        # err = (err-err.min()) / (err.max()-err.min())
-        # x = np.linspace(0,1,len(self.colors_jet))
-        # err = np.asarray([
-        #     np.interp(err, x, self.colors_jet[:,0]),
-        #     np.interp(err, x, self.colors_jet[:,1]),
-        #     np.interp(err, x, self.colors_jet[:,2]),
-        # ]).T
-
-        # err = np.round(err*255).astype(int)
-        # c = vtkUnsignedCharArray()
-        # c.SetNumberOfComponents(3)
-        # c.SetName('Colors')
-        # for e in err.tolist():
-        #     c.InsertNextTuple3(*e)
-        # # self.actors['half1m'].VisibilityOff()
-        # srcmm = self.half1m.outputport.GetProducer().GetOutput()
-        # srcmm.GetPointData().SetScalars(c)
-        # srcmm.GetPointData().SetActiveScalars('Colors')
-
         self.ren_win.Render()
 
 
@@ -353,4 +318,4 @@ def midsagittal(stl_file_input):
 
 
 if __name__ == '__main__':
-    midsagittal(r'C:\data\midsagittal\skin_smooth_3mm.stl')
+    midsagittal(r'out.stl')
