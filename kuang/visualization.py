@@ -122,6 +122,7 @@ class vtkSubView(QMdiSubWindow, VtkCompatible):
         wdgt = QWidget(self)
         self.vtkWidget = QVTKRenderWindowInteractor(wdgt)
         self.gridlayout = QGridLayout(wdgt)
+        self.gridlayout.setContentsMargins(0,0,0,0)
         self.gridlayout.addWidget(self.vtkWidget, 0, 0, 1, 1)
         self.setWidget(wdgt)
 
@@ -157,17 +158,46 @@ class vtkSubView(QMdiSubWindow, VtkCompatible):
         pass
 
 
+class vtkCTOrthogonalSubView(vtkSubView):
+
+    def __init__(self, orientation, interactor_style_type=vtk.vtkInteractorStyleImage, **initargs):
+
+        super().__init__(interactor_style_type=vtk.vtkInteractorStyleImage, **initargs)
+
+        self.viewer = vtk.vtkImageViewer2()
+        self.viewer.SetRenderWindow(self.vtkWidget.GetRenderWindow())
+        self.viewer.SetRenderer(self.renderer)
+        self.viewer.SetupInteractor(self.interactor)
+        self.renderer.SetBackground(0.2, 0.2, 0.2)
+
+        if orientation == 'axial':
+            self.viewer.SetSliceOrientationToXY()
+        elif orientation == 'sagittal':
+            self.viewer.SetSliceOrientationToYZ()
+        elif orientation == 'coronal':
+            self.viewer.SetSliceOrientationToXZ()
+        else:
+            raise ValueError('unrecognized orientation')
+        
+        
 
 class Q2x2Window(QMdiArea):
     def __init__(self, size=None, title=None, **initargs):
 
         super().__init__()
 
-        for _ in range(4):
-            sub = vtkSubView()
-            sub.display_dummy()
-            sub.show()
-            self.addSubWindow(sub)
+
+        self.perspective = vtkSubView()
+        self.addSubWindow(self.perspective)
+
+        self.coronal = vtkCTOrthogonalSubView(orientation='coronal')
+        self.addSubWindow(self.coronal)
+
+        self.sagittal = vtkCTOrthogonalSubView(orientation='sagittal')
+        self.addSubWindow(self.sagittal)
+
+        self.axial = vtkCTOrthogonalSubView(orientation='axial')
+        self.addSubWindow(self.axial)
 
         self.tileSubWindows()
 
@@ -177,31 +207,82 @@ class Q2x2Window(QMdiArea):
             self.setObjectName(title)
         return None
 
+
+
+    def set_reader(self, reader):
+        
+        if not hasattr(self, 'reader'):
+            self.reader = reader
+
+            self.axial.viewer.SetInputConnection(reader.GetOutputPort())
+            self.sagittal.viewer.SetInputConnection(reader.GetOutputPort())
+            self.coronal.viewer.SetInputConnection(reader.GetOutputPort())
+            
+        else:
+            # confirm delete or discard progress
+            pass
+        
+
+
     def show(self):
+
+        self.axial.viewer.Render()
+        self.axial.show()
+
+        self.sagittal.viewer.Render()
+        self.sagittal.show()
+
+        self.coronal.viewer.Render()
+        self.coronal.show()
+
+        self.perspective.renderer.SetBackground(0.2, 0.2, 0.2)
+        self.perspective.display_dummy()
+        self.perspective.show()
+
         super().show()
 
-    @property
-    def axial(self):
-        self.subWindowList()[0]
 
-    @property
-    def sagittal(self):
-        self.subWindowList()[1]
 
-    @property
-    def coronal(self):
-        self.subWindowList()[2]
+class AppWindow(QMainWindow):
 
-    @property
-    def perspective(self):
-        self.subWindowList()[3]
+    def __init__(self, parent=None, file=None):
+        super().__init__(parent=parent)
+        if file is not None:
+            self.load(file)
+        self.central = Q2x2Window()
+        self.panel = ?
+        self.setCentralWidget(self.central)
+
+    def load(self, file):
+        # load previously saved project file
+        pass
+
+    def load_nifti(self, file):
+        # load images to an empty project file
+        reader = vtk.vtkNIFTIImageReader()
+        reader.SetFileName(file)
+        reader.Update()
+
+        self.central.set_reader(reader)
+    
+    def show(self):
+
+        self.central.show()
+        super().show()
+
+
+class MyApplication(QApplication):
+    windows = []
+    def new_window(self):
+        w = AppWindow()
+        self.windows.append(w)
+        return w
 
 
 def main(argv):
-    app = QApplication(argv)
-    w = QMainWindow()
-    mdi = Q2x2Window()
-    w.setCentralWidget(mdi)
+    app = MyApplication(argv)
+    app.
+    w.load_nifti(r'C:\data\pre-post-paired-40-send-1122\n0002\20100921-pre.nii.gz')
     w.show()
     sys.exit(app.exec())
 
