@@ -34,6 +34,7 @@ from vtkmodules.vtkRenderingCore import (
 from vtkmodules.vtkCommonExecutionModel import vtkAlgorithmOutput
 from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 # PySide
+from PySide6.QtGui import QWindow
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMainWindow, QGridLayout, QWidget, QMdiSubWindow, QMdiArea
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
@@ -118,7 +119,7 @@ class vtkSubView(QMdiSubWindow, VtkCompatible):
     # can be used as a regular qt window
     def __init__(self, parent=None, interactor_style_type=None, size=None, title=None, frameless=True, **initargs):
 
-        super().__init__(parent)
+        super().__init__(parent=parent)
         
         wdgt = QWidget(self)
         self.vtkWidget = QVTKRenderWindowInteractor(wdgt)
@@ -131,6 +132,7 @@ class vtkSubView(QMdiSubWindow, VtkCompatible):
         self.renderer = vtkRenderer()
         self.renderer.SetBackground(0.6863, 0.9333, 0.9333)
         self.vtkWidget.GetRenderWindow().AddRenderer(self.renderer)
+
 
         # set up interactor
         self.interactor = self.vtkWidget.GetRenderWindow().GetInteractor()
@@ -157,6 +159,7 @@ class vtkSubView(QMdiSubWindow, VtkCompatible):
 
     def quit(self):
         pass
+
 
 
 class vtkCTOrthogonalSubView(vtkSubView):
@@ -241,57 +244,6 @@ class Q2x2Window(QMdiArea):
         self.perspective.show()
 
         super().show()
-
-
-
-class AppWindow(QMainWindow):
-
-    def __init__(self, parent=None, file=None):
-        super().__init__(parent=parent)
-        if file is not None:
-            self.load(file)
-        self.central = Q2x2Window()
-        self.panel = ?
-        self.setCentralWidget(self.central)
-
-    def load(self, file):
-        # load previously saved project file
-        pass
-
-    def load_nifti(self, file):
-        # load images to an empty project file
-        reader = vtk.vtkNIFTIImageReader()
-        reader.SetFileName(file)
-        reader.Update()
-
-        self.central.set_reader(reader)
-    
-    def show(self):
-
-        self.central.show()
-        super().show()
-
-
-class MyApplication(QApplication):
-    windows = []
-    def new_window(self):
-        w = AppWindow()
-        self.windows.append(w)
-        return w
-
-
-def main(argv):
-    app = MyApplication(argv)
-    app.
-    w.load_nifti(r'C:\data\pre-post-paired-40-send-1122\n0002\20100921-pre.nii.gz')
-    w.show()
-    sys.exit(app.exec())
-
-
-
-if __name__ == "__main__":
-
-    main(sys.argv)
 
 
 

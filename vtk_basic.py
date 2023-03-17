@@ -150,6 +150,7 @@ class Visualizer():
         self.ren_win.AddObserver('ModifiedEvent', self.position_panel)
         self.position_panel()
 
+
     def start(self):
         self.iren.Initialize()
         self.ren_win.Render()
