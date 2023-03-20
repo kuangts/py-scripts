@@ -33,6 +33,45 @@ from scipy.spatial  import KDTree
 
 colors = vtkNamedColors()
 
+
+class MirrorTransform(vtkMatrixToLinearTransform):
+    
+    def __init__(self, mirror_plane=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if mirror_plane is None:
+            mirror_plane = vtkPlane()
+        self.plane = mirror_plane
+        self.SetInput(vtkMatrix4x4())
+
+    # def update_matrix(self):
+    #     origin = np.array(self.plane.GetOrigin())
+    #     normal = np.array(self.plane.GetNormal())
+    #     T = np.eye(4) - 2 * np.array([[*normal,0]]).T @ np.array([[ *normal, -origin.dot(normal) ]])
+    #     self.GetInput().DeepCopy(T.ravel())
+
+    # def Initialize(self, vtkself):
+    #         vtkself.SetNumberOfInputPorts(1)
+    #         vtkself.SetNumberOfOutputPorts(1)
+
+    # def FillInputPortInformation(self, vtkself, port, info):
+    #     info.Set(vtk.vtkAlgorithm.INPUT_REQUIRED_DATA_TYPE(), "vtkDataSet")
+    #     return 1
+
+    # def FillOutputPortInformation(self, vtkself, port, info):
+    #     info.Set(vtk.vtkDataObject.DATA_TYPE_NAME(), "vtkDataSet")
+    #     return 1
+    
+    def ProcessRequest(self, *args, **kwargs):
+        origin = np.array(self.plane.GetOrigin())
+        normal = np.array(self.plane.GetNormal())
+        T = np.eye(4) - 2 * np.array([[*normal,0]]).T @ np.array([[ *normal, -origin.dot(normal) ]])
+        self.GetInput().DeepCopy(T.ravel())
+        super().ProcessRequest(*args, **kwargs)
+
+
+
+
+
 class Model:
     def __init__(self, data_or_dataport, transform=None, show=False):
 

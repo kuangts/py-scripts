@@ -1,167 +1,57 @@
+from copy import deepcopy
+
 import numpy as np
-import scipy
-from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkIOGeometry import vtkSTLReader
-from vtkmodules.vtkFiltersSources import vtkSphereSource, vtkPlaneSource
-from vtkmodules.vtkInteractionStyle import vtkInteractorStyleSwitch, vtkInteractorStyleTrackballCamera, vtkInteractorStyleTrackballActor
-from vtkmodules.vtkRenderingAnnotation import vtkAxesActor
-from vtkmodules.vtkInteractionWidgets import vtkOrientationMarkerWidget
-from vtkmodules.vtkCommonCore import vtkPoints, vtkScalarsToColors
-from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkPolyData, vtkPlane, vtkIterativeClosestPointTransform
+from vtkmodules.vtkCommonCore import vtkPoints, vtkFloatArray
+from vtkmodules.vtkCommonDataModel import vtkPolyData, vtkPlane, vtkImplicitWindowFunction
 from vtkmodules.vtkCommonTransforms import vtkMatrixToLinearTransform
 from vtkmodules.vtkCommonMath import vtkMatrix4x4
 from vtkmodules.vtkFiltersGeneral import vtkTransformPolyDataFilter
-from vtkmodules.vtkFiltersCore import vtkClipPolyData
-from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
+from vtkmodules.vtkFiltersCore import vtkClipPolyData, vtkCleanPolyData, vtkImplicitPolyDataDistance, vtkQuadricDecimation
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
     vtkPolyDataMapper,
-    vtkCellPicker,
+    vtkColorTransferFunction,
     vtkRenderWindow,
     vtkRenderWindowInteractor,
     vtkRenderer
 )
-from vtkmodules.vtkInteractionWidgets import vtkImplicitPlaneRepresentation,vtkImplicitPlaneWidget2
-import vtk
-from vtk import vtkPolyData
-from basic import Poly
-from register import nicp
-from scipy.spatial import KDTree
-from time import perf_counter as tic
-from numpy import all, any, eye, sum, mean, sort, unique, bincount, isin, exp, inf
-from scipy.spatial import KDTree, distance_matrix
-from numpy.linalg import svd, det, solve
-
-import matplotlib.pyplot as plt
-from matplotlib import colors
-from matplotlib.ticker import PercentFormatter
-
-import sys, os, glob, json
-from collections import namedtuple
-from vtkmodules.vtkFiltersSources import vtkSphereSource 
-from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
-from vtkmodules.vtkIOImage import vtkNIFTIImageReader
-from vtkmodules.vtkIOGeometry import vtkSTLReader
-from vtkmodules.vtkFiltersCore import vtkFlyingEdges3D, vtkImplicitPolyDataDistance
-from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkImplicitDataSet, vtkImplicitWindowFunction 
-from vtkmodules.vtkCommonMath import vtkMatrix4x4
-from vtkmodules.vtkCommonCore import vtkPoints, reference, vtkPoints, vtkIdList, vtkUnsignedCharArray, vtkFloatArray
-from vtkmodules.vtkInteractionWidgets import vtkPointCloudRepresentation, vtkPointCloudWidget
-from vtkmodules.vtkCommonTransforms import vtkMatrixToLinearTransform, vtkTransform
-from vtkmodules.vtkFiltersGeneral import vtkTransformPolyDataFilter, vtkTransformFilter, vtkDistancePolyDataFilter
-from vtkmodules.vtkRenderingCore import vtkBillboardTextActor3D
-from vtkmodules.vtkRenderingCore import (
-    vtkActor,
-    vtkActorCollection,
-    vtkTextActor,    
-    vtkProperty,
-    vtkCellPicker,
-    vtkPointPicker,
-    vtkPolyDataMapper,
-    vtkDataSetMapper,
-    vtkRenderWindow,
-    vtkRenderWindowInteractor,
-    vtkRenderer
-)
+from vtkmodules.vtkInteractionWidgets import vtkImplicitPlaneRepresentation, vtkImplicitPlaneWidget2
 from vtkmodules.vtkFiltersPython import vtkPythonAlgorithm
 from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
-import vtk
-import numpy as np
-from scipy.spatial  import KDTree
-import vtk_basic
-from vtk_basic import MatrixTransform, Model, colors
-from copy import deepcopy
-# import pyfqmr
 
-
-from functools import partial
 import matplotlib
 matplotlib.use('qtagg')
 import matplotlib.pyplot as plt
 
-from mpl_toolkits.mplot3d import Axes3D
-# from pycpd import DeformableRegistration
-from argparse import Namespace as encap
-import saikiran321
+from register import nicp
+
 
 
 default_error_range = (-20.,20.)
 target_number_of_points = 5_000
+histo_num_bins = 100
 
-num_bins = 100
-# def get_jet_color(normalized_values):
-#     x = [0.0, 0.125, 0.375, 0.625, 0.875, 1.0]
-#     r = [0.0, 0.0, 0.0, 1.0, 1.0, 0.5]
-#     g = [0.0, 0.0, 1.0, 1.0, 0.0, 0.0]
-#     b = [0.5, 1.0, 1.0, 0.0, 0.0, 0.0]
-#     rgb = np.asarray((
-#         np.interp(normalized_values, x, r),
-#         np.interp(normalized_values, x, g),
-#         np.interp(normalized_values, x, b),
-#     )).T
-#     return rgb
+
+class encap(object):
+    def __init__(self, **kwargs):
+        for k,v in kwargs.items():
+            setattr(self,k,v)
 
 
 def polydata_to_numpy(polydata):
     numpy_nodes = vtk_to_numpy(polydata.GetPoints().GetData())
     numpy_faces = vtk_to_numpy(polydata.GetPolys().GetData()).reshape(-1,4)[:,1:].astype(int)
-    return encap(**{
-        'nodes':numpy_nodes,
-        'faces':numpy_faces
-    })
+    result = encap(nodes=numpy_nodes, faces=numpy_faces)
+    return result
 
-class MirrorTransform(vtkMatrixToLinearTransform):
+
+class ChestVisualizer:
     
-    def __init__(self, mirror_plane=None, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if mirror_plane is None:
-            mirror_plane = vtkPlane()
-        self.plane = mirror_plane
-        self.SetInput(vtkMatrix4x4())
-
-    # def update_matrix(self):
-    #     origin = np.array(self.plane.GetOrigin())
-    #     normal = np.array(self.plane.GetNormal())
-    #     T = np.eye(4) - 2 * np.array([[*normal,0]]).T @ np.array([[ *normal, -origin.dot(normal) ]])
-    #     self.GetInput().DeepCopy(T.ravel())
-
-    # def Initialize(self, vtkself):
-    #         vtkself.SetNumberOfInputPorts(1)
-    #         vtkself.SetNumberOfOutputPorts(1)
-
-    # def FillInputPortInformation(self, vtkself, port, info):
-    #     info.Set(vtk.vtkAlgorithm.INPUT_REQUIRED_DATA_TYPE(), "vtkDataSet")
-    #     return 1
-
-    # def FillOutputPortInformation(self, vtkself, port, info):
-    #     info.Set(vtk.vtkDataObject.DATA_TYPE_NAME(), "vtkDataSet")
-    #     return 1
-    
-    def ProcessRequest(self, *args, **kwargs):
-        origin = np.array(self.plane.GetOrigin())
-        normal = np.array(self.plane.GetNormal())
-        T = np.eye(4) - 2 * np.array([[*normal,0]]).T @ np.array([[ *normal, -origin.dot(normal) ]])
-        self.GetInput().DeepCopy(T.ravel())
-        super().ProcessRequest(*args, **kwargs)
-
-
-class obj(object):
-    pass
-
-class ChestVisualizer(vtk_basic.Visualizer):
-    
-    @staticmethod
-    def decimate(v, f):
-        mesh_simplifier = pyfqmr.Simplify()
-        mesh_simplifier.setMesh(v,f)
-        mesh_simplifier.simplify_mesh(target_count = 1000, aggressiveness=7, preserve_border=True, verbose=10)
-        vertices, faces, normals = mesh_simplifier.getMesh()
-        return vertices, faces, normals
-
     def build_color(self, ran):
         if not hasattr(self, 'lut'):
-            self.lut = vtk.vtkColorTransferFunction()
+            self.lut = vtkColorTransferFunction()
         r = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.5]
         g = [0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0]
         b = [0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
@@ -172,12 +62,29 @@ class ChestVisualizer(vtk_basic.Visualizer):
 
     def __init__(self, data):
 
-        super().__init__()
+        # create window 
+        renderer = vtkRenderer()
+        renderer.SetBackground(.67, .93, .93)
+        ren_win = vtkRenderWindow()
+        ren_win.AddRenderer(renderer)
+        ren_win.SetSize(960, 640)
+        ren_win.SetWindowName('')
+        iren = vtkRenderWindowInteractor()
+        iren.SetRenderWindow(ren_win)
+        style = vtkInteractorStyleTrackballCamera()
+        style.SetDefaultRenderer(renderer)
+        iren.SetInteractorStyle(style)
+
+        self.ren = renderer
+        self.ren_win = ren_win
+        self.iren = iren
+        self.style = style
+
         self.style.AddObserver('KeyPressEvent', self.key_press_event)
         self.build_color(default_error_range)
 
         #### REMOVE DUPLICATE POITNS ####
-        cleaner = vtk.vtkCleanPolyData()
+        cleaner = vtkCleanPolyData()
         cleaner.SetInputData(data)
         cleaner.Update()
         self.dataport = cleaner.GetOutputPort()
@@ -185,7 +92,7 @@ class ChestVisualizer(vtk_basic.Visualizer):
         #### REDUCE THE NUMBER OF POINTS IF NECESSARY ####
         current_number_of_points = self.dataport.GetProducer().GetOutput().GetNumberOfPoints()
         if current_number_of_points > target_number_of_points:
-            reducer = vtk.vtkQuadricDecimation() # also polydata algorithm
+            reducer = vtkQuadricDecimation() # also polydata algorithm
             reducer.SetInputConnection(self.dataport)
             target_reduction = 1 - target_number_of_points/current_number_of_points
             reducer.SetTargetReduction(target_reduction)
@@ -206,7 +113,9 @@ class ChestVisualizer(vtk_basic.Visualizer):
         self.distance_clip.GenerateClipScalarsOn()
 
         #### INITIAL PLANE AND CAMERA ####
-        self.mirror = MatrixTransform()
+        self.mirror = vtkMatrixToLinearTransform()
+        self.mirror.SetInput(vtkMatrix4x4())
+        self.mirror.Update()
         self.bounds = self.data_ready.GetBounds()
         xmin, xmax, ymin, ymax, zmin, zmax = self.bounds
         xdim, ydim, zdim = xmax-xmin, ymax-ymin, zmax-zmin
@@ -230,7 +139,7 @@ class ChestVisualizer(vtk_basic.Visualizer):
         self.plane_modified()
 
         #### WHOLE MODEL ####
-        self.whole = obj()
+        self.whole = encap()
         self.whole.mapper = vtkPolyDataMapper()
         self.whole.mapper.SetInputData(self.data_ready)
         self.whole.data = self.data_ready
@@ -249,9 +158,9 @@ class ChestVisualizer(vtk_basic.Visualizer):
         self.plane_clipper.SetClipFunction(self.plane)
         self.plane_clipper.GenerateClippedOutputOn()
         self.plane_clipper.SetInputConnection(self.whole_mirrored.GetOutputPort())
-        _cleaner = vtk.vtkCleanPolyData()
+        _cleaner = vtkCleanPolyData()
         _cleaner.SetInputConnection(self.plane_clipper.GetOutputPort(0))
-        self.half = obj()
+        self.half = encap()
         self.half.port = _cleaner.GetOutputPort()
         self.half.data = _cleaner.GetOutput()
         self.half.mapper = vtkPolyDataMapper()
@@ -261,20 +170,20 @@ class ChestVisualizer(vtk_basic.Visualizer):
         self.half.actor.SetMapper(self.half.mapper)
         self.ren.AddActor(self.half.actor)
 
-        self.whole.mapper.Update()
-        self.half.mapper.Update()
-        self.update_distance()
-        self.ren_win.Render()
-
         self.fig = plt.figure()
         self.ax = plt.gca()
-        self.bar = self.ax.bar(range(num_bins), np.zeros((num_bins,)), width=.1)
+        self.bar = self.ax.bar(range(histo_num_bins), np.zeros((histo_num_bins,)), width=1)
 
         cid = self.fig.canvas.mpl_connect('button_press_event', self.clicked_on_bar)
         cid = self.fig.canvas.mpl_connect('button_release_event', self.released_on_bar)
         cid = self.fig.canvas.mpl_connect('motion_notify_event', self.motion_notify_event)
         plt.ion()
         plt.show()
+
+        self.whole.mapper.Update()
+        self.half.mapper.Update()
+        self.update_distance()
+        self.ren_win.Render()
 
 
     def clip(self, ran=None):
@@ -359,12 +268,10 @@ class ChestVisualizer(vtk_basic.Visualizer):
     def plane_modified(self):
         # callback for plane modified
         # can use to refresh self.plane -> self.mirror -> pipeline
-        print(f'plane is modified {tic()}')
         origin = np.array(self.plane.GetOrigin())
         normal = np.array(self.plane.GetNormal())
         T = np.eye(4) - 2 * np.array([[*normal,0]]).T @ np.array([[ *normal, -origin.dot(normal) ]])
-        self.mirror.update_matrix(T)
-
+        self.mirror.GetInput().DeepCopy(np.array(T).ravel())
 
     def set_plane(self, origin, normal):
         # update plane widget manually
@@ -397,7 +304,7 @@ class ChestVisualizer(vtk_basic.Visualizer):
         self.half.mapper.Update()
         self.ren_win.Render()
 
-        arr, edgs = np.histogram(vtk_to_numpy(err), bins=num_bins)
+        arr, edgs = np.histogram(vtk_to_numpy(err), bins=histo_num_bins)
         edgs = edgs[0:-1]/2 + edgs[1:]/2
         wid = edgs[1]-edgs[0]
         rgb = np.empty(edgs.size*4, "uint8")
@@ -414,6 +321,7 @@ class ChestVisualizer(vtk_basic.Visualizer):
 
     @staticmethod
     def cpd(tar, src):
+        from pycpd import DeformableRegistration        
         reg = DeformableRegistration(X=tar.nodes, Y=src.nodes)
         src_reg = deepcopy(src)
         src_reg.nodes, *_ = reg.register()
@@ -444,10 +352,13 @@ class ChestVisualizer(vtk_basic.Visualizer):
 
     def register(self):
         
-        halfmm = Model(self.half.data, transform=self.mirror, show=True)
+        transform = vtkTransformPolyDataFilter()
+        transform.SetTransform(self.mirror)
+        transform.SetInputData(self.half.data)
+        transform.Update()
 
         srcm = self.half.data
-        src = halfmm.output
+        src = transform.GetOutput()
         tar = self.whole.data
         reg_vtk = vtkPolyData()
         reg_vtk.DeepCopy(srcm)
@@ -458,6 +369,7 @@ class ChestVisualizer(vtk_basic.Visualizer):
         
         reg = self.nicp(tar, srcm)
 
+        # visualize this reg_vtk to see the result of nicp
         reg_vtk.GetPoints().SetData(numpy_to_vtk(reg.nodes))
 
         midpts = vtkPoints()
@@ -467,14 +379,16 @@ class ChestVisualizer(vtk_basic.Visualizer):
         self.set_plane(origin, normal)
 
 
-def midsagittal(stl_file_input):
+def main(stl_file_input):
     reader = vtkSTLReader()
     reader.SetFileName(stl_file_input)
     reader.Update()
     d = ChestVisualizer(reader.GetOutput())
-    d.start()
+    d.iren.Start()
+
+
     
 
 
 if __name__ == '__main__':
-    midsagittal(r'out.stl')
+    main(r'out.stl')
