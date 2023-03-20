@@ -4,7 +4,7 @@ from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
 from vtkmodules.vtkIOImage import vtkNIFTIImageReader
 from vtkmodules.vtkFiltersCore import vtkFlyingEdges3D
-from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData
+from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData, vtkDataSet
 from vtkmodules.vtkCommonMath import vtkMatrix4x4
 from vtkmodules.vtkCommonCore import vtkPoints, reference, vtkPoints, vtkIdList
 from vtkmodules.vtkInteractionWidgets import vtkPointCloudRepresentation, vtkPointCloudWidget
@@ -33,48 +33,89 @@ from scipy.spatial  import KDTree
 
 colors = vtkNamedColors()
 
-
 class Model:
-    def __init__(self, data_or_dataport, make_actor=True, color=None, transform=None):
-        # transform Model should only affect said Model, unless otherwise intended
-        # set_matrix on MatrixTransform should affect all models using the same instance
+    def __init__(self, data_or_dataport, transform=None, show=False):
 
-        if transform is None:
+        if transform is True:
             transform = MatrixTransform()
-        T = vtkTransformFilter()
-        T.SetTransform(transform)
+
         if isinstance(data_or_dataport, vtkAlgorithmOutput):
-            T.SetInputConnection(data_or_dataport)
-            T.Update()
             self.inputport = data_or_dataport
-        elif isinstance(data_or_dataport, vtkPolyData):
-            T.SetInputData(data_or_dataport)
-            T.Update()
+        elif isinstance(data_or_dataport, vtkDataSet):
             self.input = data_or_dataport
         else:
             raise ValueError('Model: wrong type of data')
-        self.outputport = T.GetOutputPort()
-        self.output = T.GetOutput()
-        self.filter = T
+        
+        if transform:
+            self.transform = vtkTransformFilter()
+            self.transform.SetTransform(transform)
+            try:
+                self.transform.SetInputConnection(self.inputport)
+            except:
+                self.transform.SetInputData(self.input)
 
-        if make_actor:
-            mapper = vtkPolyDataMapper()
-            mapper.SetInputConnection(self.outputport)
-            mapper.Update()
-            actor = vtkActor()
-            actor.SetMapper(mapper)
-            self.actor = actor
-            if color is not None:
-                self.actor.GetProperty().SetColor(*color)
+            self.transform.Update()
+            self.outputport = self.transform.GetOutputPort()
+            self.output = self.transform.GetOutput()
         else:
-            self.actor = None
+            try:
+                self.outputport = self.inputport
+                self.output = self.inputport.GetProducer().GetOutput()
+            except:
+                self.output = self.input
+
+        if show:
+            self.mapper = vtkPolyDataMapper()
+            try:
+                self.mapper.SetInputConnection(self.outputport)
+            except:
+                self.mapper.SetInputData(self.output)
+            self.actor = vtkActor()
+            self.actor.SetMapper(self.mapper)
+            
+        return None
+    
+
+    def set_color(self, color):
+        if isinstance(color, str):
+            color = colors.GetColor3d(color)
+        self.actor.GetProperty().SetColor(color)
+        return None
 
 
-    def set_transform(self, T):
-        if not isinstance(T, MatrixTransform):
-            raise ValueError('set_transform only accepts MatrixTransform instance')
-        self.filter.SetTransform(T)
-        self.filter.Update()
+    def set_transform(self, T, copy=False):
+        # 
+        if isinstance(T, np.ndarray):
+            if not copy:
+                print('in order to use np array as input, set copy to True')
+            assert T.size == 16, "wrong size"
+            t = vtkMatrix4x4()
+            t.DeepCopy(T.ravel())
+            T = t
+
+        if isinstance(T, MatrixTransform):
+            if copy:
+                TT = MatrixTransform()
+                TT.DeepCopy(T)
+                T = TT
+            self.transform.SetTransform(T)
+
+        elif isinstance(T, vtkMatrix4x4):
+            if copy:
+                TT = vtkMatrix4x4()
+                TT.DeepCopy(T)
+                T = TT
+            self.transform.GetTransform().SetInput(T)
+
+        else:
+            try:
+                self.transform.SetTransform(T)
+            except:
+                raise ValueError('wrong input')
+            
+        self.transform.Update()
+
+        return None
 
     def obbtree(self):
         pass
