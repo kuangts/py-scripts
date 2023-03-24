@@ -1,5 +1,12 @@
+import os, sys, pkg_resources
+required_pkg = ['numpy','scipy','matplotlib','vtk']
+try:
+    pkg_resources.require(required_pkg)
+except Exception as e:
+    print('Required packages:', *required_pkg)
+    sys.exit(e)
+
 # system import
-import os, sys
 from copy import deepcopy
 
 # numpy import
@@ -29,10 +36,8 @@ from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
 # matplotlib import
 import matplotlib
-matplotlib.use('qtagg')
+matplotlib.use('tkagg')
 import matplotlib.pyplot as plt
-
-from register import nicp
 
 
 default_error_range = (-0.02, 0.02)
@@ -53,7 +58,7 @@ def polydata_to_numpy(polydata):
     return result
 
 
-class ChestVisualizer:
+class Midsag:
     
     def build_color(self, ran):
         if not hasattr(self, 'lut'):
@@ -252,7 +257,6 @@ class ChestVisualizer:
                 self.ran.sort()
                 self.clip(self.ran)
 
-
             if hasattr(self, 'ran'):
                 del self.ran
 
@@ -268,10 +272,6 @@ class ChestVisualizer:
         key = self.iren.GetKeySym()
         if not hasattr(self, 'command'):
             self.command = ''
-        if key == 'k':
-            self.command += key
-            print(self.command)
-            self.register()
         if key == '0':
             self.whole.actor.SetVisibility( not self.whole.actor.GetVisibility())    
         if key == 'h':
@@ -314,8 +314,6 @@ class ChestVisualizer:
         self.half.mapper.Update()
         self.update_distance()
         self.ren_win.Render()
-        # for a in self.actors.values():
-        #     a.GetMapper().Update()
 
 
     ## planes updates (involving color/error/clipping)
@@ -350,90 +348,32 @@ class ChestVisualizer:
                 b.set(x=e-wid/2, y=0, height=a, facecolor=c, width=wid)
 
 
-
-    @staticmethod
-    def cpd(tar, src):
-        from pycpd import DeformableRegistration        
-        reg = DeformableRegistration(X=tar.nodes, Y=src.nodes)
-        src_reg = deepcopy(src)
-        src_reg.nodes, *_ = reg.register()
-        return src_reg
-
-
-    @staticmethod
-    def nicp(tar, src):
-        src_reg = deepcopy(src)
-        reg = nicp(
-            dict(V=src_reg.nodes,F=src_reg.faces),
-            dict(V=tar.nodes,F=tar.faces))
-        src_reg.nodes = reg.V
-        return src_reg
-
-    @staticmethod
-    def saikiran321_nonrigidIcp(tar, src):
-        src_reg = deepcopy(src)
-        src_reg = saikiran321.nonrigidIcp(
-            encap(vertices=src.nodes, triangles=src.faces),
-            encap(vertices=tar.nodes, triangles=tar.faces),
-        )
-        src_reg.nodes = src_reg.vertices
-        src_reg.faces = src_reg.triangles
-        
-        return src_reg
-
-
-    def register(self):
-        
-        transform = vtkTransformPolyDataFilter()
-        transform.SetTransform(self.mirror)
-        transform.SetInputData(self.half.data)
-        transform.Update()
-
-        srcm = self.half.data
-        src = transform.GetOutput()
-        tar = self.whole.data
-        reg_vtk = vtkPolyData()
-        reg_vtk.DeepCopy(srcm)
-
-        srcm =  polydata_to_numpy(srcm)
-        src =  polydata_to_numpy(src)
-        tar =  polydata_to_numpy(tar)
-        
-        reg = self.nicp(tar, srcm)
-
-        # visualize this reg_vtk to see the result of nicp
-        reg_vtk.GetPoints().SetData(numpy_to_vtk(reg.nodes))
-
-        midpts = vtkPoints()
-        midpts.SetData(numpy_to_vtk( src.nodes/2 + reg.nodes/2 ))
-        origin, normal = [0.]*3, [0.]*3
-        vtkPlane.ComputeBestFittingPlane(midpts, origin, normal)
-        self.set_plane(origin, normal)
-
-
-
-
 def main(stl_file_input):
     reader = vtkSTLReader()
     reader.SetFileName(stl_file_input)
     reader.Update()
-    d = ChestVisualizer(reader.GetOutput())
+    d = Midsag(reader.GetOutput())
     d.iren.Start()
 
 
 
 if __name__ == '__main__':
-    main(r'C:\Users\tmhtxk25\Downloads\p5.stl')
+    if len(sys.argv) == 1:
+        sys.argv.append(r'C:\Users\tmhtxk25\Downloads\p5.stl')
+    main(*sys.argv[1:])
+    # transformation 1
     # [[-0.9995  0.0322 -0.0048  0.3965]
     # [ 0.0322  0.9995  0.0001 -0.0064]
     # [-0.0048  0.0001  1.      0.001 ]
     # [ 0.      0.      0.      1.    ]]
 
+    # transformation 2
     # [[-0.996   0.0886 -0.0141  0.3854]
     #  [ 0.0886  0.9961  0.0006 -0.0171]
     #  [-0.0141  0.0006  0.9999  0.0027]
     #  [ 0.      0.      0.      1.    ]]
 
+    # transformation 3
     # [0.199  0.1482 0.1496]
     # [ 0.9987 -0.0512  0.0049]
     # [[-0.9947  0.1022 -0.0099  0.3832]

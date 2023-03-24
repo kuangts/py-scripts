@@ -87,10 +87,15 @@ class AppWindow(QMainWindow):
         central = vtk2x2RenderWindow()
         vtkWidget = QVTKRenderWindowInteractor(self, rw=central)
         style = vtkInteractorStyleImage()
-        iren = vtkWidget.GetRenderWindow().GetInteractor()
-        iren.SetInteractorStyle(style)
+        self.iren = vtkWidget.GetRenderWindow().GetInteractor()
+        self.iren.SetInteractorStyle(style)
+        style.AddObserver('LeftButtonPressEvent', self.left_button_press_event)
         self.setCentralWidget(vtkWidget)
         return None
+
+    def left_button_press_event(self, obj, event):
+        pos = self.iren.GetEventPosition()
+        print(pos)
 
     def load_data(self, **kw):
         if 'nifti_file' in kw:
@@ -229,7 +234,7 @@ def main(argv):
     w.load_nifti(r'C:\data\pre-post-paired-40-send-1122\n0001\20110425-pre.nii.gz')
     w.load_data(nifti_file=r'C:\data\pre-post-paired-40-send-1122\n0001\20110425-pre.nii.gz')
 
-    w.centralWidget().GetRenderWindow().renderer_axial.SetViewport(0,0,1,1)
+    # w.centralWidget().GetRenderWindow().renderer_axial.SetViewport(0,0,1,1)
     
     sys.exit(app.exec())
 

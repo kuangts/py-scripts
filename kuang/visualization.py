@@ -1,6 +1,6 @@
 ## python packages
 import sys, os, glob, json
-
+from abc import abstractmethod, ABC
 ## site packages
 import numpy as np
 from scipy.spatial  import KDTree
@@ -8,7 +8,7 @@ from scipy.spatial  import KDTree
 import vtk
 from vtkmodules.vtkFiltersSources import vtkSphereSource 
 from vtkmodules.vtkCommonColor import vtkNamedColors
-from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera, vtkInteractorStyleTrackballActor
+from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera, vtkInteractorStyleTrackballActor, vtkInteractorStyleImage
 from vtkmodules.vtkIOImage import vtkNIFTIImageReader
 from vtkmodules.vtkFiltersCore import vtkFlyingEdges3D
 from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData
@@ -37,14 +37,106 @@ from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 from PySide6.QtGui import QWindow
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMainWindow, QGridLayout, QWidget, QMdiSubWindow, QMdiArea
-from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
+from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor as QVTK
 
 ## my packages
 # from .digitization import landmark
 
 
+    # abstract classes
 
-class VtkCompatible:
+# class SubView(QMdiSubWindow):
+    
+#     # can be used as a regular qt window
+#     def __init__(self, parent=None, interactor_style_type=None, frameless=True, **initargs):
+        
+#         super().__init__(parent=parent)
+#         self.window = vtkSubWindow(interactor_style_type=interactor_style_type)
+        
+#         # install this window
+#         wdgt = QWidget(self)
+#         self.qvtk_interactor = QVTKRenderWindowInteractor(parent=wdgt, rw=self.window)
+#         self.gridlayout = QGridLayout(wdgt)
+#         self.gridlayout.setContentsMargins(0,0,0,0)
+#         self.gridlayout.addWidget(self.qvtk_interactor, 0, 0, 1, 1)
+#         self.window.renderer = vtkRenderer()
+#         self.window.AddRenderer(self.window.renderer)
+#         self.setWidget(wdgt)
+
+#         # additional setup
+#         if frameless:
+#             self.setWindowFlag(Qt.FramelessWindowHint)        
+
+#         return None
+
+#     def show(self):
+#         self.window.show()
+#         super().show()
+
+#     def quit(self):
+#         pass
+
+
+class QVTK(QVTK):
+    
+    # can be used as a regular qt window
+    def __init__(self, parent=None, interactor_style_type=None, **initargs):
+        self.window = vtkRenderWindow()
+        initargs['rw'] = self.window
+        super().__init__(parent=parent, **initargs)
+
+        # set up interactor and style
+        if interactor_style_type is None:
+            interactor_style_type = vtkInteractorStyleTrackballCamera
+        iren = vtkRenderWindowInteractor()
+        style = interactor_style_type()
+        style.AddObserver('LeftButtonPressEvent', self.left_button_press_event)
+        style.picker = vtkCellPicker()
+        style.picker.SetTolerance(0.05)
+        iren.SetInteractorStyle(style)
+        iren.SetRenderWindow(self.window)
+
+        self.renderer = vtkRenderer()
+        self.window.AddRenderer(self.renderer)
+        style.SetDefaultRenderer(self.renderer)
+
+        self.interactor = iren
+        self.interactor_style = style
+        return None
+
+    def show(self):
+        self.window.Render()
+        self.interactor.Initialize()
+        self.interactor.Start()
+        return None
+
+    def quit(self):
+        self.window.Finalize()
+        self.interactor.TerminateApp()
+        del self
+        return None
+    
+
+    # @property
+    # def interactor(self): 
+    #     return self.window.GetInteractor()
+    
+    # @property
+    # def interactor_style(self): 
+    #     return self.window.GetInteractor().GetInteractorStyle()
+
+    def left_button_press_event(self, obj, event):
+        pos = obj.GetInteractor().GetEventPosition()
+        print(self.style == obj)
+        print('left button pressed', pos)
+        obj.picker.Pick(pos[0], pos[1], 0, self.ren)
+        if obj.picker.GetCellId() != -1:
+            coord = list(obj.picker.GetPickPosition())
+            print(coord)
+
+        return None
+
+
     # renderer, interactor, actors (dictionary)
     def display_dummy(self):
 
@@ -76,100 +168,16 @@ class VtkCompatible:
             del self.actors[k]
 
 
-class Window(vtkRenderWindow, VtkCompatible):
-
-    def __init__(self, interactor_style_type=None, size=None, title=None, **initargs):
-
-        super().__init__()
-
-        if interactor_style_type is None:
-            interactor_style_type = vtkInteractorStyleTrackballCamera
-
-        # set up renderer
-        self.renderer = vtkRenderer()
-        self.renderer.SetBackground(0.6863, 0.9333, 0.9333)
-        self.AddRenderer(self.renderer)
-
-        # set up interactor and style
-        self.interactor = vtkRenderWindowInteractor()
-        self.interactor_style = interactor_style_type()
-        self.interactor_style.SetDefaultRenderer(self.renderer)
-        self.interactor.SetInteractorStyle(self.interactor_style)
-        self.interactor.SetRenderWindow(self)
-
-        # additional setup
-        if size is not None:
-            self.SetSize(*size)
-        if title is not None:
-            self.SetWindowName(title)
-        return None
-
-    def show(self):
-        self.Render()
-        self.interactor.Initialize()
-        self.interactor.Start()
-
-    def quit(self):
-        self.Finalize()
-        self.interactor.TerminateApp()
-        del self
 
 
-class vtkSubView(QMdiSubWindow, VtkCompatible):
-    # can be used as a regular qt window
-    def __init__(self, parent=None, interactor_style_type=None, size=None, title=None, frameless=True, **initargs):
+class OrthoView(QVTK):
 
-        super().__init__(parent=parent)
-        
-        wdgt = QWidget(self)
-        self.vtkWidget = QVTKRenderWindowInteractor(wdgt)
-        self.gridlayout = QGridLayout(wdgt)
-        self.gridlayout.setContentsMargins(0,0,0,0)
-        self.gridlayout.addWidget(self.vtkWidget, 0, 0, 1, 1)
-        self.setWidget(wdgt)
+    def __init__(self, parent=None, orientation=None, interactor_style_type=vtkInteractorStyleImage, **initargs):
 
-        # set up renderer
-        self.renderer = vtkRenderer()
-        self.renderer.SetBackground(0.6863, 0.9333, 0.9333)
-        self.vtkWidget.GetRenderWindow().AddRenderer(self.renderer)
-
-
-        # set up interactor
-        self.interactor = self.vtkWidget.GetRenderWindow().GetInteractor()
-        if interactor_style_type is None:
-            interactor_style_type = vtkInteractorStyleTrackballCamera
-        self.interactor_style = interactor_style_type()
-        self.interactor_style.SetDefaultRenderer(self.renderer)
-        self.interactor.SetInteractorStyle(self.interactor_style)
-
-        # additional setup
-        if frameless:
-            self.setWindowFlag(Qt.FramelessWindowHint)        
-        if size is not None:
-            self.resize(*size)
-        if title is not None:
-            self.setObjectName(title)
-        return None
-
-
-    def show(self):
-        super().show()
-        self.interactor.Initialize()
-
-
-    def quit(self):
-        pass
-
-
-
-class vtkCTOrthogonalSubView(vtkSubView):
-
-    def __init__(self, orientation, interactor_style_type=vtk.vtkInteractorStyleImage, **initargs):
-
-        super().__init__(interactor_style_type=vtk.vtkInteractorStyleImage, **initargs)
+        super().__init__(parent=parent, interactor_style_type=vtkInteractorStyleImage, **initargs)
 
         self.viewer = vtk.vtkImageViewer2()
-        self.viewer.SetRenderWindow(self.vtkWidget.GetRenderWindow())
+        self.viewer.SetRenderWindow(self.window)
         self.viewer.SetRenderer(self.renderer)
         self.viewer.SetupInteractor(self.interactor)
         self.renderer.SetBackground(0.2, 0.2, 0.2)
@@ -181,52 +189,43 @@ class vtkCTOrthogonalSubView(vtkSubView):
         elif orientation == 'coronal':
             self.viewer.SetSliceOrientationToXZ()
         else:
-            raise ValueError('unrecognized orientation')
+            pass
         
         
 
-class Q2x2Window(QMdiArea):
-    def __init__(self, size=None, title=None, **initargs):
+class QVTK2x2Window(QWidget):
+
+    def __init__(self, *initargs):
 
         super().__init__()
+        
+        self.axial = OrthoView(parent=self, orientation='axial')
+        self.sagittal = OrthoView(parent=self, orientation='sagittal')
+        self.coronal = OrthoView(parent=self, orientation='coronal')
+        self.perspective = QVTK(parent=self)
 
+        self.gridlayout = QGridLayout(parent=self)
+        self.gridlayout.setContentsMargins(0,0,0,0)
+        self.gridlayout.addWidget(self.axial, 0, 0, 1, 1)
+        self.gridlayout.addWidget(self.sagittal, 0, 1, 1, 1)
+        self.gridlayout.addWidget(self.coronal, 1, 0, 1, 1)
+        self.gridlayout.addWidget(self.perspective, 1, 1, 1, 1)
 
-        self.perspective = vtkSubView()
-        self.addSubWindow(self.perspective)
-
-        self.coronal = vtkCTOrthogonalSubView(orientation='coronal')
-        self.addSubWindow(self.coronal)
-
-        self.sagittal = vtkCTOrthogonalSubView(orientation='sagittal')
-        self.addSubWindow(self.sagittal)
-
-        self.axial = vtkCTOrthogonalSubView(orientation='axial')
-        self.addSubWindow(self.axial)
-
-        self.tileSubWindows()
-
-        if size is not None:
-            self.resize(*size)
-        if title is not None:
-            self.setObjectName(title)
         return None
 
 
-
-    def set_reader(self, reader):
-        
-        if not hasattr(self, 'reader'):
-            self.reader = reader
-
-            self.axial.viewer.SetInputConnection(reader.GetOutputPort())
-            self.sagittal.viewer.SetInputConnection(reader.GetOutputPort())
-            self.coronal.viewer.SetInputConnection(reader.GetOutputPort())
-            
+    @property
+    def data_port(self):
+        if hasattr(self, '_data_port'):
+            return self._data_port
         else:
-            # confirm delete or discard progress
-            pass
-        
+            return self.parent._data_port
 
+    @data_port.setter
+    def data_port(self, dp):
+        self.axial.viewer.SetInputConnection(dp)
+        self.sagittal.viewer.SetInputConnection(dp)
+        self.coronal.viewer.SetInputConnection(dp)
 
     def show(self):
 
@@ -239,20 +238,87 @@ class Q2x2Window(QMdiArea):
         self.coronal.viewer.Render()
         self.coronal.show()
 
-        self.perspective.renderer.SetBackground(0.2, 0.2, 0.2)
-        self.perspective.display_dummy()
+        self.perspective.window.renderer.SetBackground(0.2, 0.2, 0.2)
+        self.perspective.window.display_dummy()
         self.perspective.show()
 
         super().show()
 
 
+class MyApplication(QApplication):
+    windows = []
+    def new_window(self):
+        w = AppWindow()
+        self.windows.append(w)
+        w.show()
+        return w
 
 
+class AppWindow(QMainWindow):
+
+    # def __init__(self, *args, **kw):
+    #     super().__init__(*args, **kw)
+    #     self.resize(640,480)
+    #     self.setWindowTitle('NOTHING IS LOADED')
+    #     self.central = Q2x2Window(self)
+    #     # self.central.show()
+    #     wdgt = QWidget(self)
+    #     self.gridlayout = QGridLayout(wdgt)
+    #     self.gridlayout.setContentsMargins(0,0,0,0)
+    #     self.gridlayout.addWidget(self.central, 0, 0, 1, 1)
+    #     self.setCentralWidget(self.central)
+    #     for v in self.central.subWindowList():
+    #         if isinstance(v, SubView) and not isinstance(v, OrthoSubView):
+    #             v.renderer.SetBackground(0.6863, 0.9333, 0.9333)
+    #     return None
+
+    def __init__(self, *args, **kw):
+        super().__init__(*args, **kw)
+        self.resize(640,480)
+        self.setWindowTitle('NOTHING IS LOADED')
+        self.central = QVTK2x2Window()
+        self.setCentralWidget(self.central)
 
 
+        # for v in self.central.subWindowList():
+        #     if isinstance(v, SubView) and not isinstance(v, OrthoSubView):
+        #         v.renderer.SetBackground(0.6863, 0.9333, 0.9333)
+        return None
 
 
+    def load_data(self, **kw):
+        # bridge to ui
+        if 'nifti_file' in kw:
+            self.load_nifti(kw['nifti_file'])
+        return None
+    
+    def load_nifti(self, file):
+        src = vtkNIFTIImageReader()
+        src.SetFileName(file)
+        src.Update()
+        self.data_port = src.GetOutputPort()
+        # change the following line to use observer
+        self.central.data_port = self.data_port
+        print('data port connected')
+        self.setWindowTitle('VIEWERING: ' + file)
+        self.central.show()
+        return None
 
+
+def main(argv):
+    app = MyApplication(argv)
+
+    w = app.new_window()
+    w.load_nifti(r'C:\data\pre-post-paired-40-send-1122\n0001\20110425-pre.nii.gz')
+
+    # w.centralWidget().GetRenderWindow().renderer_axial.SetViewport(0,0,1,1)
+    
+    sys.exit(app.exec())
+
+
+if __name__ == '__main__':
+
+    main(sys.argv)
 
 
 

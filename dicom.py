@@ -117,7 +117,7 @@ class Info(dict):
 
 def load_table(table):
     # part06.html and dicom.css are downloaded from https://dicom.nema.org/medical/dicom/current/output/html/ with no modification
-    local_file = rf'{__file__}\..\nema-dicom-part06\part06.html'
+    local_file = os.path.join(os.path.dirname(__file__),'nema-dicom-part06','part06.html')
     if os.path.isfile(local_file):
         with codecs.open(local_file, mode='r', encoding='utf-8') as f:
             t = f.read()
