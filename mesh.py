@@ -149,6 +149,20 @@ class TriangleSurface(_Base):
 
 class HexahedralMesh(_Base):
 
+	@classmethod
+	def read_inp(file):
+		match = re.search(r'\*.*NODE[\S ]*\s+(.*)\*.*END NODE.*\*.*ELEMENT[\S ]*\s+(.*)\*.*END ELEMENT', s, re.MULTILINE | re.DOTALL)
+		nodes, elems = match.group(1), match.group(2)
+
+		print(nodes,elems)
+
+		nodes = [np.fromstring(node,sep=',', dtype=float) for node in nodes.strip().split('\n')]
+		nodes = np.asarray(nodes[1:])
+		elems = [np.fromstring(node,sep=',', dtype=int) for node in elems.strip().split('\n')]
+		elems = np.asarray(elems[1:])
+		return nodes, elems
+
+
 	def __init__(self, N=np.empty((0,3)), E=np.empty((0,8)), NG=None, grid_seed=None, **initargs):
 		super().__init__(N, E, **initargs)
 		if NG is not None and len(NG):

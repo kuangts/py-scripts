@@ -1,8 +1,8 @@
 from collections.abc import Sequence
-
 import numpy as np
+
 from .transform import Transform, Transformable
-from vtkmodules.vtkCommonCore import vtkFloatArray, vtkDoubleArray, vtkPoints
+
 
 class PointArray(np.ndarray, Transformable):
 

@@ -13,7 +13,6 @@ from vtkmodules.vtkCommonColor import vtkNamedColors
 import vtk
 
 from .point import PointArray
-from ..visualization import Window
 
 # to_vtk: IsStorage64Bit is not resolved
 
@@ -200,6 +199,7 @@ def test():
 	if not np.allclose(srfc.faces,srfc_new.faces):
 		print('faces problem')
 
+	from ..visualization import Window
 	w = Window()
 	brst = TriangleSurface.read(r'C:\data\midsagittal\skin_smooth_10mm_cut.stl')
 
