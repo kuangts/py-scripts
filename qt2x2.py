@@ -1,5 +1,5 @@
 ## python packages
-import sys, os, glob, json
+import sys, os, glob, json, math
 from abc import abstractmethod, ABC
 ## site packages
 import numpy as np
@@ -31,17 +31,65 @@ from vtkmodules.vtkRenderingCore import (
     vtkRenderWindowInteractor,
     vtkRenderer
 )
-
 from vtkmodules.vtkCommonExecutionModel import vtkAlgorithmOutput
 from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
+
+
+
+from vtkmodules.vtkCommonColor import vtkNamedColors
+colors = vtkNamedColors()
+from vtkmodules.vtkFiltersCore import vtkFlyingEdges3D, vtkSmoothPolyDataFilter
+from vtkmodules.vtkCommonTransforms import vtkMatrixToLinearTransform, vtkLinearTransform, vtkTransform
+from vtkmodules.vtkFiltersGeneral import vtkTransformPolyDataFilter, vtkDiscreteFlyingEdges3D, vtkTransformFilter
+from vtkmodules.vtkIOImage import vtkNIFTIImageReader
+from vtkmodules.vtkCommonMath import vtkMatrix4x4
+from vtkmodules.vtkIOGeometry import vtkSTLReader, vtkSTLWriter
+from vtkmodules.vtkImagingCore import vtkImageThreshold
+from vtkmodules.vtkCommonCore import vtkPoints
+
+# noinspection PyUnresolvedReferences
+import vtkmodules.vtkInteractionStyle
+# noinspection PyUnresolvedReferences
+import vtkmodules.vtkRenderingOpenGL2
+from vtkmodules.vtkCommonCore import (
+    VTK_VERSION_NUMBER,
+    vtkVersion
+)
+from vtkmodules.vtkCommonDataModel import (
+    vtkDataObject,
+    vtkDataSetAttributes
+)
+from vtkmodules.vtkFiltersCore import (
+    vtkMaskFields,
+    vtkThreshold,
+    vtkWindowedSincPolyDataFilter
+)
+from vtkmodules.vtkFiltersGeneral import (
+    vtkDiscreteFlyingEdges3D,
+    vtkDiscreteMarchingCubes
+)
+from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
+from vtkmodules.vtkIOImage import vtkMetaImageReader
+from vtkmodules.vtkIOXML import vtkXMLPolyDataWriter
+from vtkmodules.vtkImagingStatistics import vtkImageAccumulate
+from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
+from vtkmodules.vtkImagingMorphological import vtkImageOpenClose3D
+
+
 # PySide
-from PySide6.QtGui import QWindow
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtGui import QWindow, QKeyEvent
+from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal, Slot, QEvent, QObject
+from PySide6.Qt3DInput import Qt3DInput 
 from PySide6.QtWidgets import QApplication, QMainWindow, QGridLayout, QWidget, QMdiSubWindow, QMdiArea
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor as QVTK
 from vtkmodules.vtkInteractionImage import vtkImageViewer2, vtkResliceImageViewer 
 from enum import Enum, IntFlag, auto
 import asyncio
+
+AXIAL = vtkImageViewer2.SLICE_ORIENTATION_XY
+CORONAL = vtkImageViewer2.SLICE_ORIENTATION_XZ
+SAGITTAL = vtkImageViewer2.SLICE_ORIENTATION_YZ
 
 ## my packages
 # from .digitization import landmark
@@ -57,75 +105,6 @@ class WindowParameter:
         'img_data',
         'lmk_data'
     }
-
-class InteractionState(IntFlag):
-    # bits assignment
-    REST = 0
-    MOVED = auto()
-    LEFT_BUTTON = auto()
-    RIGHT_BUTTON = auto()
-    CTRL = auto()
-    ALT = auto()
-
-    # derived
-    LEFT_CLICK = LEFT_BUTTON & ~MOVED
-    RIGHT_CLICK = RIGHT_BUTTON & ~MOVED
-
-    def mouse_moved(self):
-        print(f'mouse moved', end=' ')
-        return self.__class__(self.value | self.__class__.MOVED)
-
-    def left_button_pressed(self):
-        # set left-button bit and clear moved bit
-        print(f'left button pressed', end=' ')
-        return self.__class__((self.value | self.LEFT_BUTTON) & ~self.MOVED)
-
-    def left_button_released(self):
-        # clear left-button bit and moved bit
-        print(f'left button released', end=' ')
-        return self.__class__(self.value & ~self.LEFT_BUTTON & ~self.MOVED)
-
-    def right_button_pressed(self):
-        # set right-button bit and clear moved bit
-        print(f'right button pressed', end=' ')
-        return self.__class__((self.value | self.RIGHT_BUTTON) & ~self.MOVED)
-
-    def right_button_released(self):
-        # clear right-button bit and moved bit
-        print(f'right button released', end=' ')
-        return self.__class__(self.value & ~self.RIGHT_BUTTON & ~self.MOVED)
-  
-
-class EventHandler:
-
-    def key_press_event(self, obj, event): 
-        obj.OnKeyPress()
-        return None
-    
-    def key_release_event(self, obj, event):
-        obj.OnKeyRelease()
-        return None
-    
-    # button press is relatively expensive
-    def left_button_press(self, obj, event):
-        self.interaction_state = self.interaction_state.left_button_pressed()
-        obj.OnLeftButtonDown()
-        return None
-    
-    # mouse move could abort
-    def mouse_move_event(self, obj, event):
-        self.interaction_state = self.interaction_state.mouse_moved()
-        obj.OnMouseMove()
-        return None
-    
-    # do not rely on clean up after release
-    # handle stuff on the fly using move event and implement abort
-    def left_button_release(self, obj, event):
-        self.interaction_state = self.interaction_state.left_button_released()
-        obj.OnLeftButtonUp()
-        return None
-
-
 
 class Actors(object):
     def __init__(self, renderer, **kw):
@@ -192,48 +171,26 @@ class MyStyleBase(vtkInteractorStyleTrackballCamera):
         self.kr = self.AddObserver('KeyReleaseEvent', self.key_release_event)
         self.picker = vtkCellPicker()
         self.picker.SetTolerance(0.1)
-        self.current_point = [float('nan')]*3
+        self.picked_point = [float('nan')]*3
         return None
     
     def pick(self, debug=True):
         pos = self.GetInteractor().GetEventPosition()
         self.picker.Pick(pos[0], pos[1], 0, self.GetDefaultRenderer())
         # record picked point position
-        self.current_point = [float('nan'),]*3
-        self.current_point_ijk = [float('nan'),]*3
+        self.picked_point = [float('nan'),]*3
+        self.picked_ijk = [float('nan'),]*3
         if self.picker.GetCellId() != -1:
-            self.current_point = self.picker.GetPickPosition()
-            self.img_data.TransformPhysicalPointToContinuousIndex(self.current_point, self.current_point_ijk)
+            self.picked_point = self.picker.GetPickPosition()
+            self.img_data.TransformPhysicalPointToContinuousIndex(self.picked_point, self.picked_ijk)
         if debug:
             try:
                 name = self.picker.GetProp3D().GetObjectName()
                 assert name
             except:
                 name = self.GetInteractor().objectName()
-            print('on "{}" ({:4d},{:4d}) at ({:6.2f},{:6.2f},{:6.2f})'.format(name, *pos, *self.current_point), end=' ')
+            print('on "{}" ({:4d},{:4d}) at ({:6.2f},{:6.2f},{:6.2f})'.format(name, *pos, *self.picked_point), end=' ')
         return None
-
-
-    def key_press_event(self, obj, event):
-        key = obj.GetInteractor().GetKeySym()
-        print(f'key {key} is pressed')
-        if key.startswith('Control'):
-            self.interaction_state = self.interaction_state | InteractionState.CTRL
-        elif key.startswith('Alt'):
-            self.interaction_state = self.interaction_state | InteractionState.ALT
-        else:
-            self.parent().key_press_event(obj, event)
-
-
-    def key_release_event(self, obj, event):
-        key = obj.GetInteractor().GetKeySym()
-        print(f'key {key} is released')
-        if key.startswith('Control'):
-            self.interaction_state = self.interaction_state & ~InteractionState.CTRL
-        if key.startswith('Alt'):
-            self.interaction_state = self.interaction_state & ~InteractionState.ALT
-        else:
-            self.parent().key_release_event(obj, event)
 
 
     # button press/release is relatively expensive
@@ -260,7 +217,7 @@ class MyStyleBase(vtkInteractorStyleTrackballCamera):
         self.pick(obj)
         if self.interaction_state & InteractionState.CTRL:
             try:
-                self.current_slice = tuple([int(round(x)) for x in self.current_point_ijk])
+                self.current_slice = tuple([int(round(x)) for x in self.picked_ijk])
             except: pass # some nan situation
             print('**')
             return None
@@ -288,6 +245,19 @@ class MyStyleBase(vtkInteractorStyleTrackballCamera):
 
 
 class QVTK(QVTK):
+    # each instance of this class is a vtk rendering window
+    # this class is used to populate 2x2 central widget of the mainwindow
+    # mouse event is first handled here by vtk, since
+    # it binds closer to vtk, coordinates, objects, etc.
+    # if it is only view related, handle it internally
+    # then call parent for task-specific handling
+    # for task such as setting slice for other subwindow
+    # keyboard events are handled in qt -- passed to parents untouched
+    # other event goes to base class implementation, vtk or qt
+    # for mouse event handling, it is a design choice to
+    # 1) extend this class
+    # 2) create custom style
+    # 3) simply attach callbacks
 
     def __init__(self, parent=None, renderer=None, **kw):
         super().__init__(parent=parent, **kw)
@@ -296,7 +266,6 @@ class QVTK(QVTK):
         self.renderer = renderer
         self.window.AddRenderer(self.renderer)
         self.actors = Actors(self.renderer)
-
         return None
 
     @property
@@ -335,294 +304,84 @@ class QVTK(QVTK):
 
 
 
-class ObjectView(QVTK, EventHandler):
-    def __init__(self, parent=None, **kw):
-        super().__init__(parent=parent, **kw)
-        style = vtkInteractorStyleTrackballCamera()
-        style.AutoAdjustCameraClippingRangeOn()
-        style.SetDefaultRenderer(self.renderer)
-        self.SetInteractorStyle(style)
-        style.lbp = style.AddObserver('LeftButtonPressEvent', self.left_button_press)
-        style.lbr = style.AddObserver('LeftButtonReleaseEvent', self.left_button_release)
-        style.lbr = style.AddObserver('MouseMoveEvent', self.mouse_move_event)
-        style.kp = style.AddObserver('KeyPressEvent', self.key_press_event)
-        style.kr = style.AddObserver('KeyReleaseEvent', self.key_release_event)
+    def event(self, event):
+        if isinstance(event, QKeyEvent):
+            # handle key press together in 2x2 central window and not in subwindows
+            self.parent().event(event)
+            return True
+        return super().event(event)
 
-        self.SetDefaultRenderer(self.renderer)
-        self.SetInteractorStyle(style)
-        return None
-
-
-    @property
-    def current_ui_task(self):
-        if hasattr(self, '_current_ui_task'):
-            return self._current_ui_task
-        else:
-            return None
-    
-    @current_ui_task.setter
-    def current_ui_task(self, t):
-        setattr(self, '_current_ui_task', t)
-        return None
-
-
-    def pick(self, obj, debug=True):
-        pos = obj.GetInteractor().GetEventPosition()
-        self.picker.Pick(pos[0], pos[1], 0, obj.GetDefaultRenderer())
-        # record picked point position
-        self.current_point = [float('nan'),]*3
-        self.current_point_ijk = [float('nan'),]*3
-        if self.picker.GetCellId() != -1:
-            self.current_point = self.picker.GetPickPosition()
-            self.img_data.TransformPhysicalPointToContinuousIndex(self.current_point, self.current_point_ijk)
-        if debug:
-            try:
-                name = self.picker.GetProp3D().GetObjectName()
-                assert name
-            except:
-                name = self.objectName()
-            print('on "{}" ({:4d},{:4d}) at ({:6.2f},{:6.2f},{:6.2f})'.format(name, *pos, *self.current_point), end=' ')
-        return None
-
-
-    def key_press_event(self, obj, event):
-        key = obj.GetInteractor().GetKeySym()
-        print(f'key {key} is pressed')
-        if key.startswith('Control'):
-            self.interaction_state = self.interaction_state | InteractionState.CTRL
-        elif key.startswith('Alt'):
-            self.interaction_state = self.interaction_state | InteractionState.ALT
-        else:
-            self.parent().key_press_event(obj, event)
-
-
-    def key_release_event(self, obj, event):
-        key = obj.GetInteractor().GetKeySym()
-        print(f'key {key} is released')
-        if key.startswith('Control'):
-            self.interaction_state = self.interaction_state & ~InteractionState.CTRL
-        if key.startswith('Alt'):
-            self.interaction_state = self.interaction_state & ~InteractionState.ALT
-        else:
-            self.parent().key_release_event(obj, event)
-
-
-    # button press is relatively expensive
-    # mouse move could abort
-    def left_button_press(self, obj, event):
-        self.interaction_state = self.interaction_state.left_button_pressed()
-        self.pick(obj)
-        if self.app_window.mode == Mode.LANDMARK:
-            print('& LMK', end=' ')
-        elif self.app_window.mode == Mode.VIEW:
-            if self.interaction_state & InteractionState.ALT & ~InteractionState.CTRL:
-                obj.OnLeftButtonDown()
-    
-        print('**')
-        return None
-
-
-    def mouse_move_event(self, obj, event):
-        self.interaction_state = self.interaction_state.mouse_moved()
-        # if self.current_ui_task is not None:
-        #     self.current_ui_task.cancel()
-        # self.current_ui_task = asyncio.create_task(self.pick(obj))
-        # await self.current_ui_task
-        self.pick(obj)
-        if self.interaction_state & InteractionState.CTRL:
-            print('**')
-            return None
-
-        elif self.interaction_state & InteractionState.LEFT_BUTTON:
-            if self.app_window.mode == Mode.LANDMARK:
-                print('& LMK', end=' ')
-            elif self.app_window.mode == Mode.VIEW:
-                print('& VIEW', end=' ')
-                obj.OnMouseMove() # might do nothing if OnLeftButtonDown is not properly called
-                    
-        print('**')
-        return None
-
-
-    def left_button_release(self, obj, event):
-        # do not rely on clean up
-        # handle stuff on the fly using move event and implement abort
-        obj.OnLeftButtonUp()
-        self.interaction_state = self.interaction_state.left_button_released()
-
-        print('**')
-        return None
-
-class ImageView(QVTK, EventHandler):
-
-    slice_change_singal = Signal(int, int) # orientation, slice#
-    all_slice_change_singal = Signal(int, int, int) # YZ slice, XZ slice, ZY slice
-
-    def __init__(self, parent=None, orientation=2, **kw):
-        # vtkImageViewer2.SLICE_ORIENTATION_YZ === 0
-        # vtkImageViewer2.SLICE_ORIENTATION_XZ === 1
-        # vtkImageViewer2.SLICE_ORIENTATION_XY === 2
-        super().__init__(parent=parent, **kw)
-
-        self.orientation = orientation
-
-        style = vtkInteractorStyleImage()
-        style.AutoAdjustCameraClippingRangeOn()
-        style.lbp = style.AddObserver('LeftButtonPressEvent', self.left_button_press)
-        style.lbr = style.AddObserver('LeftButtonReleaseEvent', self.left_button_release)
-        style.lbr = style.AddObserver('MouseMoveEvent', self.mouse_move_event)
-        style.kp = style.AddObserver('KeyPressEvent', self.key_press_event)
-        style.kr = style.AddObserver('KeyReleaseEvent', self.key_release_event)
-        style.mwf = style.AddObserver('MouseWheelForwardEvent', self.scroll_forward)
-        style.mwb = style.AddObserver('MouseWheelBackwardEvent', self.scroll_backward)
-
-        style.SetDefaultRenderer(self.renderer)
-        self.SetInteractorStyle(style)
-        self.viewer = vtkImageViewer2()
-        self.viewer.SetRenderWindow(self.window)
-        self.viewer.SetRenderer(self.renderer)
-        self.renderer.SetBackground(0.2, 0.2, 0.2)
-        
-        if orientation == vtkImageViewer2.SLICE_ORIENTATION_YZ:
-            self.viewer.SetSliceOrientationToYZ()
-            self.setObjectName('sagittal')
-        elif orientation == vtkImageViewer2.SLICE_ORIENTATION_XZ:
-            self.viewer.SetSliceOrientationToXZ()
-            self.setObjectName('coronal')
-        elif orientation == vtkImageViewer2.SLICE_ORIENTATION_XY:
-            self.viewer.SetSliceOrientationToXY()
-            self.setObjectName('axial')
-        else:
-            raise ValueError('wrong orientation')
-
-        return None
 
     
-    def scroll_forward(self, obj, event):
-        self.slice_change_singal.emit(self.orientation, self.viewer.GetSlice() + 1)
-        return None
 
+# class KeyFilter(QObject):
+#     def eventFilter(self, obj, event):
+#         if isinstance(event, QKeyEvent):
+#             obj.parent().event(event)
+#             return True
+#         else:
+#             # standard event processing
+#             return super().eventFilter(obj, event)
 
-    def scroll_backward(self, obj, event):
-        self.slice_change_singal.emit(self.orientation, self.viewer.GetSlice() - 1)
-        return None
-        
-
-    def show(self):
-        self.viewer.SetInputData(self.img_data)
-        self.viewer.SetSlice((self.viewer.GetSliceMin() + self.viewer.GetSliceMax())//2)
-        self.viewer.Render()
-        super().show()
-
-    def pick(self, obj, debug=True):
-        pos = obj.GetInteractor().GetEventPosition()
-        self.picker.Pick(pos[0], pos[1], 0, obj.GetDefaultRenderer())
-        # record picked point position
-        self.current_point = [float('nan'),]*3
-        self.current_point_ijk = [float('nan'),]*3
-        if self.picker.GetCellId() != -1:
-            self.current_point = self.picker.GetPickPosition()
-            self.img_data.TransformPhysicalPointToContinuousIndex(self.current_point, self.current_point_ijk)
-        if debug:
-            try:
-                name = self.picker.GetProp3D().GetObjectName()
-                assert name
-            except:
-                name = self.objectName()
-            print('on "{}" ({:4d},{:4d}) at ({:6.2f},{:6.2f},{:6.2f})'.format(name, *pos, *self.current_point), end=' ')
-        return None
-
-
-    def key_press_event(self, obj, event):
-        key = obj.GetInteractor().GetKeySym()
-        print(f'key {key} is pressed')
-        if key.startswith('Control'):
-            self.interaction_state = self.interaction_state | InteractionState.CTRL
-        elif key.startswith('Alt'):
-            self.interaction_state = self.interaction_state | InteractionState.ALT
-        else:
-            self.parent().key_press_event(obj, event)
-
-
-    def key_release_event(self, obj, event):
-        key = obj.GetInteractor().GetKeySym()
-        print(f'key {key} is released')
-        if key.startswith('Control'):
-            self.interaction_state = self.interaction_state & ~InteractionState.CTRL
-        if key.startswith('Alt'):
-            self.interaction_state = self.interaction_state & ~InteractionState.ALT
-        else:
-            self.parent().key_release_event(obj, event)
-
-
-
-    def left_button_press(self, obj, event):
-        self.app_window.interaction_state = self.interaction_state.left_button_pressed()
-        self.pick(obj)
-        if self.app_window.param.mode == Mode.LANDMARK:
-            print('& LMK', end=' ')
-        elif self.app_window.mode == Mode.VIEW:
-            if self.interaction_state & InteractionState.ALT & ~InteractionState.CTRL:
-                obj.OnLeftButtonDown()
-    
-        print('**')
-        return None
-
-
-    def mouse_move_event(self, obj, event):
-        self.interaction_state = self.interaction_state.mouse_moved()
-        # if self.current_ui_task is not None:
-        #     self.current_ui_task.cancel()
-        # self.current_ui_task = asyncio.create_task(self.pick(obj))
-        # await self.current_ui_task
-        self.pick(obj)
-        if self.interaction_state & InteractionState.CTRL:
-            ijk = [int(round(x)) for x in self.current_point_ijk]
-            self.all_slice_change_singal.emit(self.)
-            print('**')
-            return None
-
-        elif self.interaction_state & InteractionState.LEFT_BUTTON:
-            if self.app_window.mode == Mode.LANDMARK:
-                print('& LMK', end=' ')
-            elif self.app_window.mode == Mode.VIEW:
-                print('& VIEW', end=' ')
-                obj.OnMouseMove() # might do nothing if OnLeftButtonDown is not properly called
-                    
-        print('**')
-        return None
-
-
-    def left_button_release(self, obj, event):
-        # do not rely on clean up
-        # handle stuff on the fly using move event and implement abort
-        obj.OnLeftButtonUp()
-        self.interaction_state = self.interaction_state.left_button_released()
-
-        print('**')
-        return None
 
 
 
 class QVTK2x2Window(QWidget):
-
+    # this class is where all vtk events are handled
+    # mode is controled by its parent on view hierarchy thru delegation
+    # 
     def __init__(self, *initargs):
         super().__init__(*initargs)
-        
+  
         # create four subviews
-        self.orthoviews = [
-            ImageView(parent=self, orientation=vtkImageViewer2.SLICE_ORIENTATION_YZ),
-            ImageView(parent=self, orientation=vtkImageViewer2.SLICE_ORIENTATION_XZ),
-            ImageView(parent=self, orientation=vtkImageViewer2.SLICE_ORIENTATION_XY),
-        ]
+        # vtkImageViewer2.SLICE_ORIENTATION_YZ === 0
+        # vtkImageViewer2.SLICE_ORIENTATION_XZ === 1
+        # vtkImageViewer2.SLICE_ORIENTATION_XY === 2
 
-        self.interaction_param = InteractionState.REST
+        self.ctrl_pressed = False
+        self.alt_pressed = False
+        self.picker = vtkCellPicker()
+        self.picker.SetTolerance(.01)
+        self.picked_point = [float('nan'),]*3
+        self.picked_ijk = [float('nan'),]*3
+        self.subviews = {}
+        # three orthogonal views
+        for orientation in (2,0,1):
+            
+            subview = QVTK(parent=self)
+            subview.viewer = vtkImageViewer2()
+            subview.viewer.SetRenderWindow(subview.window)
+            subview.viewer.SetRenderer(subview.renderer)
+            subview.viewer.SetSliceOrientation(orientation)
+            subview.renderer.SetBackground(0.2, 0.2, 0.2)
+            
+            style = vtkInteractorStyleImage()
+            style.AutoAdjustCameraClippingRangeOn()
+            style.lbp = style.AddObserver('LeftButtonPressEvent', self.left_button_press_image)
+            style.lbr = style.AddObserver('LeftButtonReleaseEvent', self.left_button_release_image)
+            style.lbr = style.AddObserver('MouseMoveEvent', self.mouse_move_event_image)
+            # style.mwf = style.AddObserver('MouseWheelForwardEvent', self.scroll_forward_image)
+            # style.mwb = style.AddObserver('MouseWheelBackwardEvent', self.scroll_backward_image)
 
-        # keep current with slice changes
-        for v in self.orthoviews:
-            v.slice_change_singal.connect(self.set_slice)
-
-        self.perspective = ObjectView(parent=self)
+            style.SetDefaultRenderer(subview.renderer)
+            subview.SetInteractorStyle(style)
+            self.subviews[orientation] = subview
+            
+    
+        # 3d view
+        subview = QVTK(parent=self)
+        subview.renderer.SetBackground(0.6863, 0.9333, 0.9333)
+        
+        style = vtkInteractorStyleTrackballCamera()
+        style.AutoAdjustCameraClippingRangeOn()
+        style.lbp = style.AddObserver('LeftButtonPressEvent', self.left_button_press_object)
+        style.lbr = style.AddObserver('LeftButtonReleaseEvent', self.left_button_release_object)
+        style.lbr = style.AddObserver('MouseMoveEvent', self.mouse_move_event_object)
+        
+        style.SetDefaultRenderer(subview.renderer)
+        subview.SetInteractorStyle(style)
+        self.subviews[3] = subview
+        
 
         # put 4 subviews on a 2x2 grid
         self.gridlayout = QGridLayout(parent=self)
@@ -636,47 +395,199 @@ class QVTK2x2Window(QWidget):
 
 
     def show(self):
-        self.perspective.renderer.SetBackground(0.6863, 0.9333, 0.9333)
-        self.perspective.display_dummy()
+        # self.perspective.display_dummy()
         self.perspective.Render()
         self.perspective.show()
-        for v in self.orthoviews: v.show()
+        self.axial.show()
+        self.sagittal.show()
+        self.coronal.show()
         super().show()
 
     @property
     def sagittal(self):
-        return self.orthoviews[0]
+        return self.subviews[0]
     
     @property
     def coronal(self):
-        return self.orthoviews[1]
+        return self.subviews[1]
     
     @property
     def axial(self):
-        return self.orthoviews[2]
+        return self.subviews[2]
+    
+    @property
+    def perspective(self):
+        return self.subviews[3]
     
     def get_slice(self, orientation):
-        return self.central.orthoviews[orientation].viewer.GetSlice()
+        return self.subviews[orientation].viewer.GetSlice()
 
     @Slot(int, int)
-    def set_slice(self, orientation, new_slice):
-        viewer = self.central.orthoviews[orientation].viewer
-        min, max = viewer.GetSliceMin(), viewer.GetSliceMax()
-        if new_slice>=min and new_slice<=max:
-            viewer.SetSlice(new_slice)
+    def set_slice(self, orientation=None, new_slice=None):
+        if orientation is None:
+            self.set_slice(0)
+            self.set_slice(1)
+            self.set_slice(2)
+            return None
+        else:
+            viewer = self.subviews[orientation].viewer
+            min, max = viewer.GetSliceMin(), viewer.GetSliceMax()
+            if new_slice is None:
+                new_slice = min//2 + max//2
+            if math.isnan(new_slice):
+                return None
+            new_slice = int(round(new_slice))
+            if new_slice>=min and new_slice<=max:
+                viewer.SetSlice(new_slice)
+            else:
+                print('out of bounds')
         return None
 
-    def handle_key(self, key):
-        if key.isdigit():
-            self.mode = Mode(int(key))
-        elif key.startswith('Control'):
-            self.interaction_state = self.interaction_state | InteractionState.CTRL
-        elif key.startswith('Alt'):
-            self.interaction_state = self.interaction_state | InteractionState.ALT
+
+    def load_image(self, data):
+        self.axial.viewer.SetInputData(data)
+        self.sagittal.viewer.SetInputData(data)
+        self.coronal.viewer.SetInputData(data)
+        self.set_slice()
+        return None
+
+
+    def pick(self, pos, ren, debug=True):
+        self.picker.Pick(pos[0], pos[1], 0, ren)
+        picked_point = [float('nan'),]*3
+        picked_ijk = [float('nan'),]*3
+        if self.picker.GetCellId() != -1:
+            picked_point = self.picker.GetPickPosition()
+            self.parent().img_data.TransformPhysicalPointToContinuousIndex(picked_point, picked_ijk)
+            self.picked_point, self.picked_ijk = picked_point, picked_ijk
+        if debug:
+            try:
+                name = self.picker.GetProp3D().GetObjectName()
+                assert name
+            except:
+                name = 'change'
+            print('on "{}" ({:4d},{:4d}) at ({:6.2f},{:6.2f},{:6.2f})'.format(name, *pos, *self.picked_point), end=' ')
+        return None
+
+
+    async def async_pick(self, pos, ren, debug=True):
+        self.picker.Pick(pos[0], pos[1], 0, ren)
+        picked_point = [float('nan'),]*3
+        picked_ijk = [float('nan'),]*3
+        if self.picker.GetCellId() != -1:
+            picked_point = self.picker.GetPickPosition()
+            self.parent().img_data.TransformPhysicalPointToContinuousIndex(picked_point, picked_ijk)
+            self.picked_point, self.picked_ijk = picked_point, picked_ijk
+        if debug:
+            try:
+                name = self.picker.GetProp3D().GetObjectName()
+                assert name
+            except:
+                name = 'change'
+            print('on "{}" ({:4d},{:4d}) at ({:6.2f},{:6.2f},{:6.2f})'.format(name, *pos, *self.picked_point), end=' ')
+        return None
+
+
+    def left_button_press_image(self, obj, event):
+        self.pick(obj.GetInteractor().GetEventPosition(), obj.GetDefaultRenderer())
+        if not self.ctrl_pressed:
+            obj.OnLeftButtonDown()
 
         return None
 
 
+    def mouse_move_event_image(self, obj, event):
+        self.pick(obj.GetInteractor().GetEventPosition(), obj.GetDefaultRenderer())
+        if self.ctrl_pressed:
+            self.set_slice(0, self.picked_ijk[0])
+            self.set_slice(1, self.picked_ijk[1])
+            self.set_slice(2, self.picked_ijk[2])
+        else:
+            obj.OnMouseMove()
+        return None
+
+
+    def left_button_release_image(self, obj, event):
+        # do not rely on clean up
+        # handle stuff on the fly using move event and implement abort
+        obj.OnLeftButtonUp()
+
+        return None
+    
+    def left_button_press_object(self, obj, event):
+        # self.pick(obj.GetInteractor().GetEventPosition(), obj.GetDefaultRenderer())
+        if not self.ctrl_pressed:
+            obj.OnLeftButtonDown()
+
+        return None
+
+
+    def mouse_move_event_object(self, obj, event):
+        asy = False
+        if asy:
+            if self.ctrl_pressed:
+                if hasattr(self, 'move_loop'):
+                    try:
+                        self.move_loop.stop()
+                    except:
+                        pass
+                self.move_loop = asyncio.new_event_loop()
+                pos, ren = obj.GetInteractor().GetEventPosition(), obj.GetDefaultRenderer()
+                self.move_loop.run_until_complete(pick_point(self, pos, ren))
+            else:
+                obj.OnMouseMove()
+            return None
+        else:
+            if self.ctrl_pressed:
+                self.pick(obj.GetInteractor().GetEventPosition(), obj.GetDefaultRenderer())
+                self.set_slice(0, self.picked_ijk[0])
+                self.set_slice(1, self.picked_ijk[1])
+                self.set_slice(2, self.picked_ijk[2])
+            else:
+                obj.OnMouseMove()
+            return None
+
+
+    def left_button_release_object(self, obj, event):
+        # do not rely on clean up
+        # handle stuff on the fly using move event and implement abort
+        obj.OnLeftButtonUp()
+
+        return None
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if hasattr(event, 'key'):
+            print(event.key())
+            if event.key() == Qt.Key_Space.value:
+                print("space pressed")
+                return True
+            if event.key() == Qt.Key_Control.value:
+                print("ctrl pressed")
+                self.ctrl_pressed = True
+                return True
+            if event.key() == Qt.Key_Alt.value:
+                print("alt pressed")
+                self.alt_pressed = True
+                return True
+        return False
+
+
+    def keyReleaseEvent(self, event: QKeyEvent) -> None:
+        if hasattr(event, 'key'):
+            print(event.key())
+            if event.key() == Qt.Key_Space.value:
+                print("space released")
+                return True
+            if event.key() == Qt.Key_Control.value:
+                print("ctrl released")
+                self.ctrl_pressed = False
+                return True
+            if event.key() == Qt.Key_Alt.value:
+                print("alt released")
+                self.alt_pressed = False
+                return True
+        return False
+        
 
 class AppWindow(QMainWindow):
 
@@ -686,11 +597,8 @@ class AppWindow(QMainWindow):
         super().__init__(*args, **kw)
         
         # init parameters
-        self.param = WindowParameter()
-        self.param.img_data = None
-        self.param.lmk_data = None
-        self.param.mode = Mode.VIEW
-        self.param.interaction_state = InteractionState.REST
+        self.img_data = None
+        self.lmk_data = None
 
         # init children - main 2x2 window + side bar
         self.setWindowTitle('NOT LOADED')
@@ -706,18 +614,29 @@ class AppWindow(QMainWindow):
             self.load_nifti(kw['nifti_file'])
         return None
     
+
     # DATA MODEL RELATED
     def load_nifti(self, file):
         src = vtkNIFTIImageReader()
         src.SetFileName(file)
         src.Update()
-        self.image_data = src.GetOutput()
+        self.img_data = src.GetOutput()
+        label = threshold_image(self.img_data,(0,1250))
+        polyd = label_to_object(label)
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputData(polyd)
+        actor = vtkActor()
+        actor.SetMapper(mapper)
+        self.central.perspective.renderer.AddActor(actor)
+        self.central.load_image(self.img_data)
         # change the following line to use observer
-        print('data source connected')
-        self.setWindowTitle('VIEWERING: ' + file)
+        print('data loaded')
+        self.setWindowTitle('VIEWING: ' + file)
         self.central.show()
         return None
 
+
+    def create_polydata(thresh, )
 
 
 
@@ -733,8 +652,69 @@ class MyApplication(QApplication):
 def main(argv):
     app = MyApplication(argv)
     w = app.new_window()
-    w.load_nifti(r'C:\data\pre-post-paired-40-send-1122\n0001\20110425-pre.nii.gz')
+    w.load_nifti(r'c:\py-scripts\n0001.nii.gz')
     sys.exit(app.exec())
+
+
+async def pick_point(self, pos, ren):
+    self.pick(pos, ren)            
+    self.set_slice(0, self.picked_ijk[0])
+    self.set_slice(1, self.picked_ijk[1])
+    self.set_slice(2, self.picked_ijk[2])
+
+
+def threshold_image(img_data, thresh):
+    threshold = vtkImageThreshold()
+    threshold.SetInputData(img_data)
+    threshold.SetInValue(1.0)
+    threshold.SetOutValue(0.0)
+    threshold.ReplaceInOn()
+    threshold.ReplaceOutOn()
+    threshold.ThresholdBetween(*thresh)
+    threshold.Update()
+    return threshold.GetOutput()
+
+def label_to_object(label_data):
+    closer = vtkImageOpenClose3D()
+    discrete_cubes = vtkDiscreteFlyingEdges3D()
+    smoother = vtkWindowedSincPolyDataFilter()
+    scalars_off = vtkMaskFields()
+    geometry = vtkGeometryFilter()
+
+    smoothing_iterations = 15
+    pass_band = 0.001
+    feature_angle = 120.0
+    
+    closer.SetInputData(label_data)
+    closer.SetKernelSize(2, 2, 2)
+    closer.SetCloseValue(1.0)
+
+    discrete_cubes.SetInputConnection(closer.GetOutputPort())
+    discrete_cubes.SetValue(0, 1.0)
+    
+    scalars_off.SetInputConnection(discrete_cubes.GetOutputPort())
+    scalars_off.CopyAttributeOff(vtkMaskFields().POINT_DATA,
+                                 vtkDataSetAttributes().SCALARS)
+    scalars_off.CopyAttributeOff(vtkMaskFields().CELL_DATA,
+                                 vtkDataSetAttributes().SCALARS)
+
+    geometry.SetInputConnection(scalars_off.GetOutputPort())
+
+    smoother.SetInputConnection(geometry.GetOutputPort())
+    smoother.SetNumberOfIterations(smoothing_iterations)
+    smoother.BoundarySmoothingOff()
+    smoother.FeatureEdgeSmoothingOff()
+    smoother.SetFeatureAngle(feature_angle)
+    smoother.SetPassBand(pass_band)
+    smoother.NonManifoldSmoothingOn()
+    smoother.NormalizeCoordinatesOn()
+    
+    smoother.Update()
+    return smoother.GetOutput()
+
+
+
+
 
 
 if __name__ == '__main__':
