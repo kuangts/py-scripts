@@ -35,9 +35,14 @@ class CASS(rarfile.RarFile):
         for i,n in enumerate(self.model_names):
             print(f'{i:>5} - {n}')
 
-    def select_model(self):
+    def model_index(self, name_list):
+        names = self.model_names
+        idx_list = [names.index(x) if x in names else -1 for x in names]
+        return idx_list
+
+    def select_model(self, model_name):
         self.print_model_names()
-        id = input(f'type index to select model: ')
+        id = input(f'type index to select model: {model_name}')
         try:
             id = int(id)
             print(f'\r{id:>5} - {self.model_names[id]} selected')
@@ -46,24 +51,33 @@ class CASS(rarfile.RarFile):
         assert id < len(self.model_names), 'outside the range'
         return id
 
-    def copy_model(self, name, dest_dir=None, override=True):
-        if dest_dir is None:
-            dest_dir = self.temp_dir
+    def copy_model(self, model_names, dest_dir, override=True, user_input=False):
+        dest_dir = os.path.normpath(dest_dir)
+        temp_dir = os.path.join(
+            os.path.dirname(dest_dir),
+            '~'+os.path.basename(dest_dir)
+        )
         os.makedirs(dest_dir, exist_ok=True)
-        dest = os.path.join(dest_dir, name+'.stl')
+        model_indices = self.model_index(model_names)
+        try:
+            os.makedirs(temp_dir)
+            for id, mn in zip(model_indices, model_names):
+                if id<0:
+                    if user_input:
+                        id = self.select_model
+                    self.extract(f'{id}.stl', temp_dir)
+                    dest = os.path.join(dest_dir, mn+'.stl')
+                    shutil.move(os.path.join(temp_dir, f'{id}.stl'), dest)
+                else:
+                    if user_input:
+
+
+        
         if not override and os.path.isfile(dest):
             print(f'{dest} exists, skipped')
-        id = self.model_names.index(name)            
-        stl_name = str(id) + '.stl'
-        self.extract(stl_name, dest_dir)
-        shutil.move(os.path.join(dest_dir, stl_name), dest)
+        self.extract(stl_name, temp_dir)
+        shutil.move(os.path.join(temp_dir, stl_name), dest)
 
-    def model(self, name):
-        self.copy_model(name, override=False)
-        s = o3d.io.read_triangle_mesh(os.path.join(self.temp_dir, name+'.stl'))
-        s.remove_duplicated_vertices()
-        s.remove_unreferenced_vertices()
-        return s
 
     def landmarks(self, dictionary='cass_landmark_index_nct.json', return_unknown=False):
         with self.open('Measure_Data_Info_new.bin') as f:
