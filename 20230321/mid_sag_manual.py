@@ -1,0 +1,317 @@
+import os, sys, pkg_resources
+required_pkg = ['numpy','scipy','matplotlib','vtk']
+try:
+    pkg_resources.require(required_pkg)
+except Exception as e:
+    print('Required packages:', *required_pkg)
+    sys.exit(e)
+
+# system import
+from copy import deepcopy
+
+# numpy import
+import numpy as np
+from scipy.spatial.transform import Rotation
+
+# vtk import
+from vtkmodules.vtkIOGeometry import vtkSTLReader
+from vtkmodules.vtkCommonCore import vtkPoints, vtkFloatArray
+from vtkmodules.vtkCommonDataModel import vtkPolyData, vtkPlane, vtkImplicitWindowFunction
+from vtkmodules.vtkCommonTransforms import vtkMatrixToLinearTransform
+from vtkmodules.vtkCommonMath import vtkMatrix4x4
+from vtkmodules.vtkFiltersGeneral import vtkTransformPolyDataFilter
+from vtkmodules.vtkFiltersCore import vtkClipPolyData, vtkCleanPolyData, vtkImplicitPolyDataDistance, vtkQuadricDecimation
+from vtkmodules.vtkRenderingCore import (
+    vtkActor,
+    vtkPolyDataMapper,
+    vtkColorTransferFunction,
+    vtkRenderWindow,
+    vtkRenderWindowInteractor,
+    vtkRenderer
+)
+from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
+from vtkmodules.vtkInteractionWidgets import vtkImplicitPlaneRepresentation, vtkImplicitPlaneWidget2
+from vtkmodules.vtkFiltersPython import vtkPythonAlgorithm
+from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
+
+
+default_error_range = (-0.02, 0.02)
+target_number_of_points = 5_000
+histo_num_bins = 100
+
+
+class encap(object):
+    def __init__(self, **kwargs):
+        for k,v in kwargs.items():
+            setattr(self,k,v)
+
+
+def polydata_to_numpy(polydata):
+    numpy_nodes = vtk_to_numpy(polydata.GetPoints().GetData())
+    numpy_faces = vtk_to_numpy(polydata.GetPolys().GetData()).reshape(-1,4)[:,1:].astype(int)
+    result = encap(nodes=numpy_nodes, faces=numpy_faces)
+    return result
+
+
+class Midsag:
+    
+    def build_color(self, ran):
+        if not hasattr(self, 'lut'):
+            self.lut = vtkColorTransferFunction()
+        r = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.5]
+        g = [0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0]
+        b = [0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
+        rgb = np.vstack((r,g,b)).T
+        rgb = np.vstack((rgb[::-1,:], rgb)).ravel()
+        self.lut.BuildFunctionFromTable(*ran, len(r), rgb)
+        self.lut.Modified()
+
+    def __init__(self, data):
+
+        # create window 
+        renderer = vtkRenderer()
+        renderer.SetBackground(.67, .93, .93)
+        ren_win = vtkRenderWindow()
+        ren_win.AddRenderer(renderer)
+        ren_win.SetSize(960, 640)
+        ren_win.SetWindowName('')
+        iren = vtkRenderWindowInteractor()
+        iren.SetRenderWindow(ren_win)
+        style = vtkInteractorStyleTrackballCamera()
+        style.SetDefaultRenderer(renderer)
+        iren.SetInteractorStyle(style)
+
+        self.ren = renderer
+        self.ren_win = ren_win
+        self.iren = iren
+        self.style = style
+
+        self.style.AddObserver('KeyPressEvent', self.key_press_event)
+        self.build_color(default_error_range)
+
+        #### REMOVE DUPLICATE POITNS ####
+        cleaner = vtkCleanPolyData()
+        cleaner.SetInputData(data)
+        cleaner.Update()
+        self.dataport = cleaner.GetOutputPort()
+
+        #### REDUCE THE NUMBER OF POINTS IF NECESSARY ####
+        current_number_of_points = self.dataport.GetProducer().GetOutput().GetNumberOfPoints()
+        if current_number_of_points > target_number_of_points:
+            reducer = vtkQuadricDecimation() # also polydata algorithm
+            reducer.SetInputConnection(self.dataport)
+            target_reduction = 1 - target_number_of_points/current_number_of_points
+            reducer.SetTargetReduction(target_reduction)
+            reducer.Update()
+            self.dataport = reducer.GetOutputPort()
+
+        self.data_ready = self.dataport.GetProducer().GetOutput()
+
+        self.distance_function = vtkImplicitPolyDataDistance()
+        self.distance_function.SetInput(self.data_ready)
+
+        self.distance_clip_function = vtkImplicitWindowFunction()
+        self.distance_clip_function.SetImplicitFunction(self.distance_function)
+        self.distance_clip_function.SetWindowRange(default_error_range)
+
+        self.distance_clip = vtkClipPolyData()
+        self.distance_clip.SetClipFunction(self.distance_clip_function)
+        self.distance_clip.GenerateClipScalarsOn()
+
+        #### INITIAL PLANE AND CAMERA ####
+        self.mirror = vtkMatrixToLinearTransform()
+        self.mirror.SetInput(vtkMatrix4x4())
+        self.mirror.Update()
+        self.bounds = self.data_ready.GetBounds()
+        xmin, xmax, ymin, ymax, zmin, zmax = self.bounds
+        xdim, ydim, zdim = xmax-xmin, ymax-ymin, zmax-zmin
+        xmid, ymid, zmid = xmin/2+xmax/2, ymin/2+ymax/2, zmin/2+zmax/2
+        self.plane_widget = vtkImplicitPlaneWidget2()
+        self.plane_widget.CreateDefaultRepresentation()
+        self.plane_rep = self.plane_widget.GetImplicitPlaneRepresentation()
+        self.plane = self.plane_rep.GetUnderlyingPlane()
+        self.plane_rep.SetWidgetBounds(xmin-xdim*.2,xmax+xdim*.2,ymin-ydim*.2,ymax+ydim*.2,zmin-zdim*.2,zmax+zdim*.2)
+        self.plane_rep.SetOrigin(xmid, ymin-ydim*.1, zmid)
+        self.plane_rep.SetNormal(1., 0., 0.)
+        self.plane_rep.SetDrawOutline(False)
+        self.plane.AddObserver('ModifiedEvent', lambda *_: self.plane_modified())
+        self.plane_widget.SetInteractor(self.iren)
+        self.plane_widget.AddObserver('EndInteractionEvent', lambda *_:self.plane_end())
+        cam = self.ren.GetActiveCamera()
+        cam.SetPosition(xmid, ymid-ydim*4, zmid)
+        cam.SetFocalPoint(xmid, ymid, zmid)
+        cam.SetViewUp(0., 0., 1.)
+        self.plane_widget.On()
+        self.plane_modified()
+
+        #### WHOLE MODEL ####
+        self.whole = encap()
+        self.whole.mapper = vtkPolyDataMapper()
+        self.whole.mapper.SetInputData(self.data_ready)
+        self.whole.data = self.data_ready
+        self.whole.actor = vtkActor()
+        self.whole.actor.SetMapper(self.whole.mapper)
+        self.whole.actor.GetProperty().SetColor(.5,.5,.5)
+        self.ren.AddActor(self.whole.actor)
+        # self.whole.actor.VisibilityOff()    
+        self.whole_mirrored = vtkTransformPolyDataFilter()
+        self.whole_mirrored.SetTransform(self.mirror)
+        self.whole_mirrored.SetInputData(self.data_ready)
+        self.distance_clip.SetInputConnection(self.whole_mirrored.GetOutputPort())
+
+        #### A PLANE CLIPS MODEL INTO HALVES ####
+        self.plane_clipper = vtkClipPolyData()
+        self.plane_clipper.SetClipFunction(self.plane)
+        self.plane_clipper.GenerateClippedOutputOn()
+        self.plane_clipper.SetInputConnection(self.whole_mirrored.GetOutputPort())
+        _cleaner = vtkCleanPolyData()
+        _cleaner.SetInputConnection(self.plane_clipper.GetOutputPort(0))
+        self.half = encap()
+        self.half.port = _cleaner.GetOutputPort()
+        self.half.data = _cleaner.GetOutput()
+        self.half.mapper = vtkPolyDataMapper()
+        self.half.mapper.SetInputConnection(self.half.port)
+        self.half.mapper.SetLookupTable(self.lut)
+        self.half.actor = vtkActor()
+        self.half.actor.SetMapper(self.half.mapper)
+        self.ren.AddActor(self.half.actor)
+
+        self.whole.mapper.Update()
+        self.half.mapper.Update()
+        self.update_distance()
+        self.ren_win.Render()
+
+
+    def clip(self, ran=None):
+        if ran is None:
+            self.whole_mirrored.SetInputData(self.data_ready)            
+            self.build_color(default_error_range)
+        else:
+            self.distance_clip_function.SetWindowRange(ran)
+            self.distance_clip.Update()
+            transform = vtkTransformPolyDataFilter()
+            transform.SetTransform(self.mirror)
+            transform.SetInputConnection(self.distance_clip.GetOutputPort())
+            transform.Update()
+            polyd = vtkPolyData()
+            polyd.DeepCopy(transform.GetOutput())
+            self.whole_mirrored.SetInputData(polyd)
+            self.build_color(ran)
+
+        self.whole_mirrored.Update()
+        
+        self.half.mapper.Update()
+        self.update_distance()
+        self.ren_win.Render()
+        
+
+
+    def key_press_event(self, obj, event):
+        key = self.iren.GetKeySym()
+        if not hasattr(self, 'command'):
+            self.command = ''
+        if key == '0':
+            self.whole.actor.SetVisibility( not self.whole.actor.GetVisibility())    
+        if key == 'h':
+            self.half.actor.SetVisibility( not self.half.actor.GetVisibility())
+        if key == 'o':
+            o = self.whole.actor.GetProperty().GetOpacity()
+            if o == 1:
+                self.whole.actor.GetProperty().SetOpacity(.5)
+            else:
+                self.whole.actor.GetProperty().SetOpacity(1)
+        if key == 'r':
+            roll = Rotation.from_euler('xyz', (0,.1,0), degrees=True)
+            self.set_plane(normal=roll.apply(self.plane_rep.GetNormal()).tolist())
+
+        if key == 't':
+            roll = Rotation.from_euler('xyz', (0,-.1,0), degrees=True)
+            self.set_plane(normal=roll.apply(self.plane_rep.GetNormal()).tolist())
+
+        self.ren_win.Render()
+
+
+    def plane_modified(self):
+        # callback for plane modified
+        # can use to refresh self.plane -> self.mirror -> pipeline
+        origin = np.array(self.plane.GetOrigin())
+        normal = np.array(self.plane.GetNormal())
+        T = np.eye(4) - 2 * np.array([[*normal,0]]).T @ np.array([[ *normal, -origin.dot(normal) ]])
+        self.mirror.GetInput().DeepCopy(np.array(T).ravel())
+        print(origin)
+        print(normal)
+        print(T)
+
+    def set_plane(self, origin=None, normal=None):
+        # update plane widget manually
+        # then refresh
+        if origin is not None:
+            self.plane_rep.SetOrigin(*origin)
+        if normal is not None:
+            self.plane_rep.SetNormal(*normal)
+        self.half.mapper.Update()
+        self.update_distance()
+        self.ren_win.Render()
+
+
+    ## planes updates (involving color/error/clipping)
+    def reset_plane(self):
+        xmin, xmax, ymin, ymax, zmin, zmax = self.bounds
+        xmid, ymid, zmid = xmin/2+xmax/2, ymin/2+ymax/2, zmin/2+zmax/2
+        self.set_plane(origin=(xmid, ymid, zmid), normal=(1, 0, 0))
+
+
+    def plane_end(self):
+        self.update_distance()
+        self.half.mapper.Update()
+
+
+    def update_distance(self):
+        err = vtkFloatArray()
+        self.distance_function.EvaluateFunction(self.half.data.GetPoints().GetData(), err)
+        self.half.data.GetPointData().SetScalars(err)
+        self.half.mapper.Update()
+
+        arr, edgs = np.histogram(vtk_to_numpy(err), bins=histo_num_bins)
+        edgs = edgs[0:-1]/2 + edgs[1:]/2
+        wid = edgs[1]-edgs[0]
+        rgb = np.empty(edgs.size*4, "uint8")
+        edg_arr = numpy_to_vtk(edgs, deep=0, array_type=10)
+        self.lut.MapScalarsThroughTable(edg_arr, rgb)
+        rgb = rgb.reshape(-1,4)/255
+        if hasattr(self, 'bar'):
+            self.ax.set_xlim(edgs[0], edgs[-1])
+            self.ax.set_ylim(0, arr.max())
+            for b,a,e,c in zip(self.bar, arr, edgs, rgb):
+                b.set(x=e-wid/2, y=0, height=a, facecolor=c, width=wid)
+
+
+def main(stl_file_input):
+    reader = vtkSTLReader()
+    reader.SetFileName(stl_file_input)
+    reader.Update()
+    d = Midsag(reader.GetOutput())
+    d.iren.Start()
+
+
+
+if __name__ == '__main__':
+    if len(sys.argv) == 1:
+        sys.argv.append(r'C:\Users\tmhtxk25\Downloads\p5.stl')
+    main(*sys.argv[1:])
+    # [[-0.9995  0.0322 -0.0048  0.3965]
+    # [ 0.0322  0.9995  0.0001 -0.0064]
+    # [-0.0048  0.0001  1.      0.001 ]
+    # [ 0.      0.      0.      1.    ]]
+
+    # [[-0.996   0.0886 -0.0141  0.3854]
+    #  [ 0.0886  0.9961  0.0006 -0.0171]
+    #  [-0.0141  0.0006  0.9999  0.0027]
+    #  [ 0.      0.      0.      1.    ]]
+
+    # [0.199  0.1482 0.1496]
+    # [ 0.9987 -0.0512  0.0049]
+    # [[-0.9947  0.1022 -0.0099  0.3832]
+    #  [ 0.1022  0.9948  0.0005 -0.0196]
+    #  [-0.0099  0.0005  1.      0.0019]
+    #  [ 0.      0.      0.      1.    ]]

@@ -128,7 +128,7 @@ def load_table(table):
     body = re.findall(r'<body>.*</body>', t, re.MULTILINE | re.DOTALL)[0]
     tree = ET.fromstring(body)
 
-    for tr in tree.find(".//*[@id='table_6-1']/..//*[@class='table-contents']/table/tbody"):
+    for i,tr in enumerate(tree.find(".//*[@id='table_6-1']/..//*[@class='table-contents']/table/tbody")):
         entry = []
         row = tr.findall('./td/p')
         for d in [0, 1, 3]:
@@ -406,5 +406,5 @@ def close_enough(d1, d2, *kwargs):
                and (np.allclose(sitk.GetArrayFromImage(img1), sitk.GetArrayFromImage(img2)))
     return equality
 
-
-Dictionary = Dictionary()
+if __name__=='__main__':
+    Dictionary = Dictionary()

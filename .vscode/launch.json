@@ -9,8 +9,9 @@
             "name": "Python: Current File",
             "type": "python",
             "request": "launch",
+            "purpose": ["debug-test"],
             "program": "${file}",
-            "console": "internalConsole",
+            "console": "externalTerminal",
             "justMyCode": false
         },
 
@@ -26,3 +27,5 @@
 
     ]
 }
+
+// C:\py-scripts\.venv\Scripts;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\Program Files (x86)\Webex\Plugins;C:\Program Files\MATLAB\R2018a\bin;C:\Program Files\Intel\CalibrationToolAPI\2.11.0.0\bin;C:\Program Files (x86)\dotnet\;C:\Users\tmhtxk25\AppData\Local\Programs\Python\Python39\Scripts\;C:\Users\tmhtxk25\AppData\Local\Programs\Python\Python39\;C:\Users\tmhtxk25\AppData\Local\Programs\Python\Launcher\;C:\Users\tmhtxk25\AppData\Local\Microsoft\WindowsApps;C:\Users\tmhtxk25\AppData\Local\atom\bin;C:\Users\tmhtxk25\AppData\Local\Microsoft\WindowsApps;C:\Users\tmhtxk25\AppData\Local\GitHubDesktop\bin;C:\Users\tmhtxk25\AppData\Local\Programs\Git\cmd
