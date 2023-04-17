@@ -5,22 +5,6 @@ from datetime import datetime as dt
 
 class CASS(rarfile.RarFile):
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        setattr(self, 'temp_dir', rf'c:\_temp_cass\{dt.now().__str__()}'.replace(' ','-').replace(':','').split('.',1)[0])
-        os.makedirs(self.temp_dir, exist_ok=False)
-
-    def __enter__(self):
-        return super().__enter__()
-
-    def __exit__(self, typ, value, traceback):
-        self.close() 
-        return super().__exit__(typ, value, traceback) # super's close() called herein
-
-    def close(self, *args, **kwargs):
-        if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
-            shutil.rmtree(self.temp_dir)
-
     @property
     def model_names(self):
         if not hasattr(self, '_model_names'):
@@ -37,7 +21,7 @@ class CASS(rarfile.RarFile):
 
     def model_index(self, name_list):
         names = self.model_names
-        idx_list = [names.index(x) if x in names else -1 for x in names]
+        idx_list = [names.index(x) if x in names else None for x in name_list]
         return idx_list
 
     def select_model(self, model_name):
@@ -46,37 +30,44 @@ class CASS(rarfile.RarFile):
         try:
             id = int(id)
             print(f'\r{id:>5} - {self.model_names[id]} selected')
+            return id
         except:
             raise ValueError('invalid input')
-        assert id < len(self.model_names), 'outside the range'
-        return id
+            return None
 
     def copy_model(self, model_names, dest_dir, override=True, user_input=False):
         dest_dir = os.path.normpath(dest_dir)
+        os.makedirs(dest_dir, exist_ok=True)
         temp_dir = os.path.join(
             os.path.dirname(dest_dir),
             '~'+os.path.basename(dest_dir)
         )
-        os.makedirs(dest_dir, exist_ok=True)
+        while os.path.exists(temp_dir):
+            temp_dir += '-1'
+        else:
+            os.makedirs(temp_dir)            
         model_indices = self.model_index(model_names)
-        try:
-            os.makedirs(temp_dir)
-            for id, mn in zip(model_indices, model_names):
-                if id<0:
-                    if user_input:
-                        id = self.select_model
-                    self.extract(f'{id}.stl', temp_dir)
-                    dest = os.path.join(dest_dir, mn+'.stl')
-                    shutil.move(os.path.join(temp_dir, f'{id}.stl'), dest)
+
+        for id, mn in zip(model_indices, model_names):
+            dest = os.path.join(dest_dir, mn+'.stl')
+            if not override and os.path.exists(dest):
+                print(f'{dest} exists, skipped')
+                continue
+            if id is None:
+                if user_input:
+                    id = self.select_model(mn)
+                    if id is None:
+                        print(f'{mn} not found, skipped')
+                        continue
                 else:
-                    if user_input:
-
-
+                    print(f'{mn} not found, skipped')
+                    continue
+            self.extract(f'{id}.stl', temp_dir)
+            shutil.move(os.path.join(temp_dir, f'{id}.stl'), dest)
         
-        if not override and os.path.isfile(dest):
-            print(f'{dest} exists, skipped')
-        self.extract(stl_name, temp_dir)
-        shutil.move(os.path.join(temp_dir, stl_name), dest)
+        shutil.rmtree(temp_dir)
+        os.rmdir(temp_dir)
+        return None
 
 
     def landmarks(self, dictionary='cass_landmark_index_nct.json', return_unknown=False):
@@ -157,3 +148,9 @@ class CASS(rarfile.RarFile):
 
         return index
                         
+
+
+if __name__=='__main__':
+    with CASS('kuang/tests/n09.CASS') as f:
+        f.copy_model(['Gyro_Marker', 'manu-maxi pr'], 
+                     r'kuang/tests/temp', override=False, user_input=True)

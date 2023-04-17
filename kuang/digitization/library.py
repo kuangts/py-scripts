@@ -77,7 +77,8 @@ class Library(frozenset):
                 if cat_id not in category:
                     category[cat_id] = {}
                 category[cat_id][m_order] = x[5]
-            del category['New GT'] # because m_order has duplicates
+            if 'New GT' in category:
+                del category['New GT'] # because m_order has duplicates
 
             # after assuring each landmark (lmk) belongs to one and only one group (grp)
             lmk_group = {lmk:grp for grp, mem in category.items() for lmk in mem.values() if lmk }
@@ -294,5 +295,5 @@ class Library(frozenset):
 
 
 if __name__=='__main__':
-    lib = Library()
+    lib = Library(r'kuang/cass.db')
     
