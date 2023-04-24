@@ -1,10 +1,140 @@
-import rarfile, shutil, os, json, struct, datetime, csv
+import rarfile, shutil, os, sys, json, datetime, csv, glob
 from collections import namedtuple
+from contextlib import redirect_stdout
 import numpy as np
-from vtk_bridge import *
+
 from stl import *
+from kuang.digitization import library
+
 
 os.environ["PATH"] += os.pathsep + r'C:\Program Files\WinRAR'
+
+
+def copy_data():    # last used 04/24/2023
+
+    #### specify the following to control export behavior ####
+
+    # read from this directory, which contains all the cass files
+    cass_dir = os.path.normpath(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Desktop\temp\cass')
+    # and write to this directory
+    export_dir = os.path.normpath(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Desktop\temp\export')
+    os.makedirs(export_dir, exist_ok=True)
+    # name this study, this will be used as prefix for the anonymized subject id
+    study_id = 'DLDX'
+    # how many digits for subject id
+    subject_id_format = study_id+'{:03}'
+    # whether to rewrite existing files or skip
+    rewrite = False
+    # check if the following files are all present, before continue to next
+    checklist_of_required_files = ['CT Soft Tissue.stl', 'Skull.stl','Mandible.stl','Upper Teeth.stl','Lower Teeth.stl', 'global_t.tfm', 'mandible_t.tfm', 'lmk.csv']
+    # set the correct db version
+    lib = library.Library(r'kuang\CASS.db')
+
+    #### detail implementation ####
+
+    # log to this file if it is not empty string
+    log_file = os.path.join(export_dir, f'log-{datetime.datetime.now().strftime("%y%M%d%H%m%S")}.txt')
+    # log_file = ''
+    # sheet that contains all the extracted info from cass, or error if any
+    info_sheet = os.path.join(export_dir, 'info.csv')
+
+    # find and serialize cass files
+    # if info sheet is found, keep the original subject id
+    cass_files = glob.glob(os.path.join(cass_dir, '*.cass'))
+    cass_files.sort()
+    idx = [subject_id_format.format(i+1) for i in range(len(cass_files))]
+    if os.path.exists(info_sheet):
+        with open(info_sheet, 'r') as f:
+            t = list(csv.reader(f))
+        if len(t):
+            idx_existing, cass_files_existing, *_ = zip(*t)
+            # assign new ids starting from the largest existing id + 1
+            idx_max = int(sorted(idx_existing)[-1].replace('DLDX',''))
+            cass_files_remaining = [c for c in [os.path.basename(c) for c in cass_files] if c not in cass_files_existing]
+            idx_remaining = [subject_id_format.format(i) for i in range(idx_max+1, idx_max+len(cass_files_remaining)+1)]
+            idx, cass_files = [*idx_existing, *idx_remaining], [*cass_files_existing, *cass_files_remaining]
+            cass_files = [os.path.join(cass_dir, c) for c in cass_files]
+    sub_dirs = [os.path.join(export_dir, id) for id in idx]
+
+
+    # in the end, temporary info sheet is renamed to info sheet
+    # refresh temporary sheet with every run
+    temp_info_sheet = os.path.join(os.path.dirname(info_sheet), '~'+os.path.basename(info_sheet))
+    with open(temp_info_sheet, 'w', newline='') as f:
+        csv.writer(f).writerows([])
+
+    with open(log_file, 'w') if log_file else sys.stdout as log:
+
+        with redirect_stdout(log):
+
+            print(datetime.datetime.now())
+            print('>>', *sys.argv)
+
+            for sub_cass, sub_dir in zip(cass_files, sub_dirs):
+
+                try:
+                    with CASS(sub_cass) as f:
+
+                        sub_id = os.path.basename(sub_dir)
+                        sub_info = [sub_id, os.path.basename(sub_cass)]
+                        print(f'{sub_id}:{f.subject_info}') 
+                        
+                        #### EXPORT if rewrite is allowed and not all files are present
+                        if rewrite or not all([os.path.exists(os.path.join(sub_dir, file)) for file in checklist_of_required_files]):
+                            os.makedirs(sub_dir, exist_ok=True)
+
+                            # set db then export landmark
+                            f.db = lib
+                            f.export_landmarks(os.path.join(sub_dir, 'lmk.csv'))
+
+                            # export models
+                            model_list = ['CT Soft Tissue', 'Skull','Mandible','Lower Teeth']
+                            if f.has_model('Upper Teeth'): # one-piece lefort
+                                model_list.append('Upper Teeth')
+                            else: # multiple-piece lefort
+                                model_list.append('Upper Teeth (original)')
+                            f.export_models(model_list, sub_dir, transform=True, fail_if_exists=False, user_select=False)
+
+                            # check model export success
+                            if not all(map(lambda f:os.path.exists(os.path.join(sub_dir, f+'.stl')), model_list)):
+                                shutil.rmtree(sub_dir)
+                                print(f'{f._rarfile} export failed')
+                                continue
+                            elif 'Upper Teeth (original)' in model_list:
+                                shutil.move(os.path.join(sub_dir, 'Upper Teeth (original).stl'), os.path.join(sub_dir, 'Upper Teeth.stl'))
+
+                            # export two transformations
+                            f.export_transformation('Skull', os.path.join(sub_dir, 'global_t.tfm'))
+                            f.export_transformation('Mandible', os.path.join(sub_dir, 'mandible_t.tfm'))
+
+                        sub_info = [*sub_info, *f.subject_info]
+
+                except Exception:
+                    shutil.rmtree(sub_dir)
+                    sub_info = [*sub_info, 'error']
+
+                finally:
+
+                    # append info for each subject
+                    while 1:
+                        try:
+                            with open(temp_info_sheet, 'a', newline='') as f:
+                                csv.writer(f).writerow(sub_info)
+                            break
+                        except:
+                            x = input('cannot write info, abort? (y/n): ')
+                            if x.lower() == 'y': break
+
+            # move temporary info sheet
+            while 1:
+                try:
+                    shutil.move(temp_info_sheet, info_sheet)
+                    break
+                except:
+                    x = input('cannot override info sheet, try again? (y/n): ')
+                    if x.lower() == 'n': break
+
+
 
 class CASS(rarfile.RarFile):
 
@@ -67,7 +197,7 @@ class CASS(rarfile.RarFile):
         return self._model_info
 
 
-    def write_transformation(self, model_name, dest_file):
+    def export_transformation(self, model_name, dest_file):
         if not self.has_model(model_name):
             return None
         
@@ -112,7 +242,7 @@ class CASS(rarfile.RarFile):
         return indices
 
 
-    def copy_models(self, model_list, dest_dir, transform=True, fail_if_exists=False, user_select=False):
+    def export_models(self, model_list, dest_dir, transform=True, fail_if_exists=False, user_select=False):
         '''copies specified models to specified destination directory
         does not return or err
         does log for failure'''
@@ -124,58 +254,65 @@ class CASS(rarfile.RarFile):
             os.path.dirname(dest_dir),
             '~' + os.path.basename(dest_dir) + datetime.datetime.now().strftime('%y%M%d%H%m%S')
         )
-        os.makedirs(temp_dir)
-        os.makedirs(dest_dir, exist_ok=True)
 
-        # model indices are also stl file names to copy
-        model_indices = self.model_indices(model_list)
+        try:
 
-        for id, mn in zip(model_indices, model_list):
+            os.makedirs(temp_dir)
+            os.makedirs(dest_dir, exist_ok=True)
 
-            # file destination
-            dest = os.path.join(dest_dir, mn+'.stl')
-            
-            # if model already exists and override is not allowed
-            if os.path.exists(dest) and fail_if_exists:
+            # model indices are also stl file names to export
+            model_indices = self.model_indices(model_list)
 
-                # fail this copying
-                print(f'copy failed, {dest} exists')
-                break
+            for id, mn in zip(model_indices, model_list):
 
-            # if model does not exist in cass
-            if id is None:
-
-                # select other model to copy, but into the specified model name
-                # this deals with mis-named models
-                if user_select: 
-                    id = self.user_select_model(mn)
-
-                    # user gave invalid input
-                    if id is None: 
-                        break
+                # file destination
+                dest = os.path.join(dest_dir, mn+'.stl')
                 
-                # cass file does not contain specified model, fail this copying
-                else:
-                    print(f'copy failed, {mn} not found')
+                # if model already exists and override is not allowed
+                if os.path.exists(dest) and fail_if_exists:
+
+                    # fail this export
+                    print(f'export failed, {dest} exists')
                     break
 
-            # copy model from cass to temporary dir
-            self.extract(f'{id}.stl', temp_dir)
+                # if model does not exist in cass
+                if id is None:
 
-        else: # if all models are present
+                    # select other model to export, but into the specified model name
+                    # this deals with mis-named models
+                    if user_select: 
+                        id = self.user_select_model(mn)
 
-            # move files from temporary dir to dest dir
-            for id, mn in zip(model_indices, model_list):
-                if transform:
-                    # transform stl to its most recent position and replace the existing file
-                    m = read_stl(os.path.join(temp_dir, f'{id}.stl'))
-                    transform_stl(m, self.model_info[id].T[0])
-                    write_stl(m, os.path.join(temp_dir, f'{id}.stl'))
+                        # user gave invalid input
+                        if id is None: 
+                            break
+                    
+                    # cass file does not contain specified model, fail this export
+                    else:
+                        print(f'export failed, {mn} not found')
+                        break
 
-                shutil.move(os.path.join(temp_dir, f'{id}.stl'), os.path.join(dest_dir, mn+'.stl'))
+                # export model from cass to temporary dir
+                self.extract(f'{id}.stl', temp_dir)
 
-        # regardless of success, clean up and return
-        shutil.rmtree(temp_dir)
+            else: # if all models are present
+
+                # move files from temporary dir to dest dir
+                for id, mn in zip(model_indices, model_list):
+                    if transform:
+                        # transform stl to its most recent position and replace the existing file
+                        m = read_stl(os.path.join(temp_dir, f'{id}.stl'))
+                        transform_stl(m, self.model_info[id].T[0])
+                        write_stl(m, os.path.join(temp_dir, f'{id}.stl'))
+
+                    shutil.move(os.path.join(temp_dir, f'{id}.stl'), os.path.join(dest_dir, mn+'.stl'))
+                    
+        except:
+            shutil.rmtree(dest_dir)
+
+        finally: # regardless of success, clean up and return
+            shutil.rmtree(temp_dir)
+
         return None
 
 
@@ -203,7 +340,7 @@ class CASS(rarfile.RarFile):
         '''loads specified model into Model(v,f,fn,T) tuple
         where T is a list of transformation matrices at various stages of the planning'''
 
-        # model indices are also stl file names to copy
+        # model indices are also stl file names to export
         indices = self.model_indices(model_list)
 
         # create list for return
@@ -265,7 +402,7 @@ class CASS(rarfile.RarFile):
         else:
             return lmk
 
-    def write_landmarks(self, lmk_file):
+    def export_landmarks(self, lmk_file):
         lmk = self.load_landmarks()
         with open(lmk_file, 'w', newline='') as f:
             csv.writer(f).writerows([[k] + list(v) for k,v in lmk.items()])
@@ -354,9 +491,6 @@ class CASS(rarfile.RarFile):
             return index
                             
 
-def main(cass_file=r'kuang/tests/n09.CASS'):
-    with CASS(cass_file) as f:
-        models = f.load_models(['manu-maxi pre'])
 
 if __name__=='__main__':
-    main()
+    copy_data()
