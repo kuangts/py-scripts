@@ -21,6 +21,14 @@ def read_stl(file):
     return stl(v=V, f=F, fn=FN)
 
 
+def transform_stl(stl_tuple, T):
+    v4 = np.hstack((stl_tuple.v, np.ones((stl_tuple.v.shape[0],1))))
+    v4 = v4 @ np.asarray(T).T
+    stl_tuple.v[...] = v4[:,:3]
+    return None
+
+
+
 def write_stl(stl_tuple, file):
 
     v,f = stl_tuple[:2]

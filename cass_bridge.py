@@ -1,4 +1,4 @@
-import rarfile, shutil, os, json, struct, datetime
+import rarfile, shutil, os, json, struct, datetime, csv
 from collections import namedtuple
 import numpy as np
 from vtk_bridge import *
@@ -32,7 +32,7 @@ class CASS(rarfile.RarFile):
         if not hasattr(self, '_subject_info'):
             with self.open(r'Patient_info.bin') as f:
                 info = f.read().decode("utf-8").split(',')
-                setattr(self, '_subject_info', Sub_info(info[:3]))
+                setattr(self, '_subject_info', Sub_info(*info[:3]))
         return self._subject_info
 
 
@@ -67,6 +67,18 @@ class CASS(rarfile.RarFile):
         return self._model_info
 
 
+    def write_transformation(self, model_name, dest_file):
+        if not self.has_model(model_name):
+            return None
+        
+        ind = self.model_indices([model_name])[0]
+        with open(dest_file, 'w', newline='') as f:
+            csv.writer(f, delimiter=' ').writerows(self.model_info[ind].T[0])
+
+        return None
+
+
+
     @property
     def model_list(self):
         '''reads from cass file to return a list of model names'''
@@ -98,9 +110,9 @@ class CASS(rarfile.RarFile):
                 indices[i] = self.model_list.index(name)
 
         return indices
-    
 
-    def copy_models(self, model_list, dest_dir, allow_override=True, fail_if_exists=False, user_select=False):
+
+    def copy_models(self, model_list, dest_dir, transform=True, fail_if_exists=False, user_select=False):
         '''copies specified models to specified destination directory
         does not return or err
         does log for failure'''
@@ -124,15 +136,11 @@ class CASS(rarfile.RarFile):
             dest = os.path.join(dest_dir, mn+'.stl')
             
             # if model already exists and override is not allowed
-            if not allow_override and os.path.exists(dest):
+            if os.path.exists(dest) and fail_if_exists:
 
-                print(f'{dest} exists')
-                if fail_if_exists:
-                    # fail this copying
-                    break
-                else:
-                    # ignore existing model and move on
-                    continue
+                # fail this copying
+                print(f'copy failed, {dest} exists')
+                break
 
             # if model does not exist in cass
             if id is None:
@@ -148,16 +156,22 @@ class CASS(rarfile.RarFile):
                 
                 # cass file does not contain specified model, fail this copying
                 else:
-                    print(f'{mn} not found')
+                    print(f'copy failed, {mn} not found')
                     break
 
             # copy model from cass to temporary dir
             self.extract(f'{id}.stl', temp_dir)
 
-        else: # if everything above goes well
+        else: # if all models are present
 
             # move files from temporary dir to dest dir
             for id, mn in zip(model_indices, model_list):
+                if transform:
+                    # transform stl to its most recent position and replace the existing file
+                    m = read_stl(os.path.join(temp_dir, f'{id}.stl'))
+                    transform_stl(m, self.model_info[id].T[0])
+                    write_stl(m, os.path.join(temp_dir, f'{id}.stl'))
+
                 shutil.move(os.path.join(temp_dir, f'{id}.stl'), os.path.join(dest_dir, mn+'.stl'))
 
         # regardless of success, clean up and return
@@ -226,7 +240,7 @@ class CASS(rarfile.RarFile):
 
         # to accomodate old landmark format in cass
         old = False
-        if 'No' in lmk:
+        if 'No' in t:
             old = True
 
         # format into id:coordinates
@@ -250,6 +264,13 @@ class CASS(rarfile.RarFile):
         # if db is not set, return {id:coordinates} dict
         else:
             return lmk
+
+    def write_landmarks(self, lmk_file):
+        lmk = self.load_landmarks()
+        with open(lmk_file, 'w', newline='') as f:
+            csv.writer(f).writerows([[k] + list(v) for k,v in lmk.items()])
+        
+        return None
 
 
 

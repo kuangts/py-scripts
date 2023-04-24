@@ -171,7 +171,35 @@ def view_20230420():
         show_case(sub, models, lmk, properties)
 
 
+def view_20230424():
+
+    root = r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Desktop\temp\export'
+
+    sub_list = os.listdir(root)
+
+    for sub in sub_list:
+        print(f'viewing {sub}')                    
+
+        models_to_view = ['Skull','Mandible','Lower Teeth','Upper Teeth']
+        properties = [{} for _ in range(len(models_to_view))]
+        models = [() for _ in range(len(models_to_view))]
+
+        with open(os.path.join(root, sub, 'lmk.csv'), 'r') as f:
+            lmk = list(csv.reader(f))
+            lmk = {x[0]:list(map(float,x[1:])) for x in lmk}
+
+        for i,model_name in enumerate(models_to_view):
+                        
+            models[i] = read_stl(os.path.join(root, sub, model_name+'.stl'))
+            properties[i]['Color'] = colors.GetColor3d(colornames[i])
+            properties[i]['Opacity'] = 0.5
+            if model_name == 'Skull':
+                properties[i]['Opacity'] = 0.2
+
+        show_case(sub, models, lmk, properties)
+
+
 if __name__=='__main__':
 
-    view_20230420()
+    view_20230424()
     
