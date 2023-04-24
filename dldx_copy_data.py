@@ -5,7 +5,8 @@ from vtk_bridge import *
 from stl import *
 from CASS import CASS
 
-def copy_stl(root):
+
+def copy_data(root):
 
     export_dir = os.path.join(os.path.dirname(os.path.normpath(root)), 'export')
     info_sheet = os.path.join(export_dir, 'info.csv')
@@ -35,6 +36,12 @@ def copy_stl(root):
             print(f'{i+1}:{sub_info}')                    
             sub_dir = os.path.join(export_dir, anon_id)
             os.makedirs(sub_dir, exist_ok=True)
+
+            f.copy_landmarks(os.path.join(sub_dir, 'lmk_info.txt'))
+            lmk = f.load_landmarks(interpreter=lib)
+            with open(os.path.join(sub_dir, 'lmk.csv'),'w') as ff:
+                csv.writer(ff).writerows([[k] + list(v) for k,v in lmk.items()])
+
 
             models_to_load = ['CT Soft Tissue', 'Skull','Mandible','Lower Teeth']
 
@@ -93,13 +100,14 @@ def copy_stl(root):
 
 
 if __name__=='__main__':
-
-    root = os.path.normpath(sys.argv[1])
+    from kuang.digitization import library
+    lib = library.Library(r'kuang\CASS.db')
+    root = os.path.normpath(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Desktop\temp\original')
     os.makedirs(os.path.join(os.path.dirname(root), 'export'), exist_ok=True)
     log_file = os.path.join(os.path.dirname(root), 'export', 'log.txt')
     with open(log_file, 'w') as sys.stdout:
         from datetime import datetime
         print(datetime.now())
         print('>>', *sys.argv)
-        copy_stl(root)
+        copy_data(root)
     
