@@ -124,8 +124,8 @@ def threshold_image(image_data, thresh):
     return threshold.GetOutput()
 
 
-def mask_to_object(label_data):
-    closer = vtkImageOpenClose3D()
+def mask_to_object(mask_image):
+    # closer = vtkImageOpenClose3D()
     discrete_cubes = vtkDiscreteFlyingEdges3D()
     smoother = vtkWindowedSincPolyDataFilter()
     scalars_off = vtkMaskFields()
@@ -135,11 +135,11 @@ def mask_to_object(label_data):
     pass_band = 0.001
     feature_angle = 120.0
     
-    closer.SetInputData(label_data)
-    closer.SetKernelSize(2, 2, 2)
-    closer.SetCloseValue(1.0)
+    # closer.SetInputData(label_data)
+    # closer.SetKernelSize(2, 2, 2)
+    # closer.SetCloseValue(1.0)
 
-    discrete_cubes.SetInputConnection(closer.GetOutputPort())
+    discrete_cubes.SetInputData(mask_image)
     discrete_cubes.SetValue(0, 1.0)
     
     scalars_off.SetInputConnection(discrete_cubes.GetOutputPort())
@@ -150,14 +150,14 @@ def mask_to_object(label_data):
 
     geometry.SetInputConnection(scalars_off.GetOutputPort())
 
-    # smoother.SetInputConnection(geometry.GetOutputPort())
-    # smoother.SetNumberOfIterations(smoothing_iterations)
-    # smoother.BoundarySmoothingOff()
-    # smoother.FeatureEdgeSmoothingOff()
-    # smoother.SetFeatureAngle(feature_angle)
-    # smoother.SetPassBand(pass_band)
-    # smoother.NonManifoldSmoothingOn()
-    # smoother.NormalizeCoordinatesOn()
+    smoother.SetInputConnection(geometry.GetOutputPort())
+    smoother.SetNumberOfIterations(smoothing_iterations)
+    smoother.BoundarySmoothingOff()
+    smoother.FeatureEdgeSmoothingOff()
+    smoother.SetFeatureAngle(feature_angle)
+    smoother.SetPassBand(pass_band)
+    smoother.NonManifoldSmoothingOn()
+    smoother.NormalizeCoordinatesOn()
     
     geometry.Update()
 
@@ -433,14 +433,14 @@ def seed_grid(nodes, elems):
 
 if __name__=='__main__':
 
-
-    completed_cases_root = r'C:\Users\tians\Box\RPI\data\FEM_DL'
-    recent_cases_root = r'C:\Users\tians\Box\Facial Prediction_DK_TK\recent_cases'
-    all_cases_root = r'C:\Users\tians\Box\RPI\data\pre-post-paired-unc40-send-1122'
-    skin_lmk_root = r'C:\Users\tians\Box\RPI\data\pre-post-paired-soft-tissue-lmk-23'
-    working_root = r'P:\20230428'
-    lmk_root = r'C:\Users\tians\Box\RPI\data\pre-post-paired-soft-tissue-lmk-23'
-    segment_root = r'C:\Users\tians\OneDrive\meshes'
+    box = r'C:\Users\xiapc\Box'
+    completed_cases_root = rf'{box}\RPI\data\FEM_DL'
+    recent_cases_root = rf'{box}\Facial Prediction_DK_TK\recent_cases'
+    all_cases_root = rf'{box}\RPI\data\pre-post-paired-unc40-send-1122'
+    skin_lmk_root = rf'{box}\RPI\data\pre-post-paired-soft-tissue-lmk-23'
+    working_root = rf'P:\20230428'
+    lmk_root = rf'{box}\RPI\data\pre-post-paired-soft-tissue-lmk-23'
+    segment_root = rf'C:\Users\tians\OneDrive\meshes'
 
     do_checking = False
 
@@ -527,7 +527,7 @@ if __name__=='__main__':
         #__________________________________________________________________________________________#
         # copy inp mesh and segments, generate hex_skin for cutting, calculate pre->post registration for each segment
         
-        segs = ['di','diL','diR','le']
+        segs = ('di','diL','diR','le')
         if not all([isfile(pjoin(case_dir, x)) for x in ['hexmesh_open.inp'] + ['pre_'+s+'.stl' for s in segs] ]):
 
             shutil.copy(pjoin(segment_root, case_name, 'hexmesh_open.inp'), case_dir)
