@@ -95,6 +95,10 @@ colornames = [
 
 colors = vtkNamedColors()
 
+soft_tissue_threshold = (324, 1249)
+bone_threshold = (1250, 4095)
+all_threshold = (324, 1249)
+
 
 def load_nifti(file):
     src = vtkNIFTIImageReader()
@@ -224,8 +228,19 @@ def cut_polydata(polyd, plane_origin, plane_normal):
     return cutter.GetOutput()
 
 
-def show_polydata(case_name, polyds, properties=None):
+def polydata_actor(polyd, **property):
     
+    mapper = vtkPolyDataMapper()
+    mapper.SetInputData(polyd)
+    actor = vtkActor()
+    actor.SetMapper(mapper)
+    if property is not None:
+        for pk,pv in property.items():
+            getattr(actor.GetProperty(),'Set'+pk).__call__(pv)
+    return actor
+
+
+def render_window(case_name):
     renderer = vtkRenderer()
     renderer.SetBackground(.67, .93, .93)
 
@@ -240,18 +255,24 @@ def show_polydata(case_name, polyds, properties=None):
     style = vtkInteractorStyleTrackballCamera()
     style.SetDefaultRenderer(renderer)
     interactor.SetInteractorStyle(style)
+    return renderWindow, renderer, interactor
 
-    for i,m in enumerate(polyds):
 
-        mapper = vtkPolyDataMapper()
-        mapper.SetInputData(m)
-        actor = vtkActor()
-        actor.SetMapper(mapper)
-        if properties is not None and properties[i] is not None:
-            propty = actor.GetProperty()
-            for pk,pv in properties[i].items():
-                getattr(propty,'Set'+pk).__call__(pv)
-        renderer.AddActor(actor)
+def show_polydata(case_name, polyds, properties=None):
+    
+    renderWindow, renderer, interactor = render_window(case_name)
+    for d, p in zip(polyds, properties):
+        renderer.AddActor(polydata_actor(d, p))
+
+    renderWindow.Render()
+    interactor.Start()
+
+
+def show_actors(case_name, actors):
+    
+    renderWindow, renderer, interactor = render_window(case_name)
+    for a in actors:
+        renderer.AddActor(a)
 
     renderWindow.Render()
     interactor.Start()
@@ -285,6 +306,29 @@ def landmark_polydata(lmk):
     glyph3D.Update()
 
     return glyph3D.GetOutput()
+
+
+def landmark_actors(lmk):
+
+    actors = [
+            polydata_actor(landmark_polydata(lmk), Color=colors.GetColor3d('tomato')),
+        ]
+    
+    if isinstance(lmk, dict):
+        for label, coord in lmk.items():
+            txt = vtkBillboardTextActor3D()
+            txt.SetPosition(*coord)
+            txt.SetInput(str(label))
+            txt.GetTextProperty().SetFontSize(24)
+            txt.GetTextProperty().SetJustificationToCentered()
+            txt.GetTextProperty().SetColor((0,0,0))
+            txt.GetTextProperty().SetOpacity(.5)
+            txt.ForceOpaqueOn()
+            txt.SetDisplayOffset(0,10)
+            txt.PickableOff()
+            actors.append(txt)
+
+    return actors
 
 
 def write_landmark(lmk, file):
@@ -337,11 +381,8 @@ def read_inp(file):
     return nodes, elems
 
 
-def calculate_node_grid(nodes, elems, seed=None): # alters self, to be subclassed
-    ng = np.empty(nodes.shape)
-    ng[:] = np.nan
-
-    seed = np.array([
+def seed():
+    return np.array([
         [+1,+1,+1],
         [+1,-1,+1],
         [-1,-1,+1],
@@ -350,9 +391,14 @@ def calculate_node_grid(nodes, elems, seed=None): # alters self, to be subclasse
         [+1,-1,-1],
         [-1,-1,-1],
         [-1,+1,-1],
-    ])
-    # seed = seed[[0, 3, 1, 2, 4, 7, 5, 6],:]
-    # seed = seed*[1,-1,1]
+    ]) * -1
+
+
+
+def calculate_node_grid(nodes, elems, seed=seed()):
+    ng = np.empty(nodes.shape)
+    ng[:] = np.nan
+
     seed = np.array(seed, dtype=float)
     seed -= np.min(seed, axis=0)
     seed /= (np.max(seed, axis=0)-np.min(seed, axis=0))
@@ -384,6 +430,13 @@ def grid_3d(node_grid):
     #     g3d[*ng] = i
     return g3d
 
+
+def glob_root(d, root_dir='.'):
+    current_dir = os.getcwd()
+    os.chdir(root_dir)
+    f = glob.glob(d)
+    os.chdir(current_dir)
+    return f
 
 
 def seed_grid(nodes, elems):
@@ -430,26 +483,43 @@ def seed_grid(nodes, elems):
     return seed
 
 
+def lip_node_index(node_grid):
+    _, ind = np.unique(node_grid, axis=0, return_index=True)
+    ind_1f = np.setdiff1d(np.arange(node_grid.shape[0]), ind)
+    z_ind = np.unique(node_grid[ind_1f,2])
+    assert len(z_ind)==1, 'check mesh'
+    z_ind = z_ind[0]
+    ind = np.isin(node_grid[:,0], node_grid[ind_1f,0]) & (node_grid[:,2] == z_ind)
+    ind = np.unique(ind.nonzero()[0])
+    assert len(ind)%6 == 0, 'check_mesh'
+    return ind
+
+
+
+
+
+
+
 
 if __name__=='__main__':
 
-    box = r'C:\Users\xiapc\Box'
+    box = r'C:\Users\tmhtxk25\Box'
+    data_root = r'C:\data'
     completed_cases_root = rf'{box}\RPI\data\FEM_DL'
     recent_cases_root = rf'{box}\Facial Prediction_DK_TK\recent_cases'
-    all_cases_root = rf'{box}\RPI\data\pre-post-paired-unc40-send-1122'
-    skin_lmk_root = rf'{box}\RPI\data\pre-post-paired-soft-tissue-lmk-23'
-    working_root = rf'P:\20230428'
-    lmk_root = rf'{box}\RPI\data\pre-post-paired-soft-tissue-lmk-23'
-    segment_root = rf'C:\Users\tians\OneDrive\meshes'
+    all_cases_root = rf'{data_root}\pre-post-paired-40-send-1122'
+    working_root = rf'C:\data\20230501'
+    lmk_root = rf'{data_root}\pre-post-paired-soft-tissue-lmk-23'
+    mesh_root = rf'C:\Users\tmhtxk25\Downloads\meshes'
 
     do_checking = False
 
     list_of_files = ['hexmesh_open.inp', 'pre_skin_mesh_ct.stl', 'pre_soft_tissue_ct.stl', 'post_skin_mesh_ct.stl', 'movement_di.tfm', 'movement_diL.tfm', 'movement_diR.tfm', 'movement_le.tfm', 'pre_di.stl','pre_diL.stl','pre_diR.stl','pre_le.stl']
 
-    cases_40 = glob.glob('n*', root_dir=all_cases_root)
-    cases_done = glob.glob('n*_ActualSurgery*', root_dir=completed_cases_root)
+    cases_40 = glob_root('n*', root_dir=all_cases_root)
+    cases_done = glob_root('n*_ActualSurgery*', root_dir=completed_cases_root)
     cases_done = [f'n{int(x[1:3]):04}' for x in cases_done]
-    cases_recent = glob.glob('n*', root_dir=recent_cases_root)
+    cases_recent = glob_root('n*', root_dir=recent_cases_root)
     cases_recent_not_completed = [x for x in cases_recent if x not in cases_done]
     print(f'{len(cases_recent_not_completed)} recent cases not completed:', *cases_recent_not_completed)
     cases_done.sort()
@@ -477,24 +547,30 @@ if __name__=='__main__':
         if not all([isfile(pjoin(case_dir, x)) for x in ('skin-pre.stl', 'skin-post.stl', 'skin-pre-23.csv', 'skin-post-23.csv', 'pre_skin_mesh_ct.stl', 'pre_soft_tissue_ct.stl', 'post_skin_mesh_ct.stl')]):
 
             lmk_pre = load_landmark(pjoin(lmk_root, case_name, 'skin-pre-23.csv'))
-            img_pre = load_nifti(glob.glob(pjoin(all_cases_root, case_name, '*-pre.nii.gz'))[0])
-            seg_pre = threshold_image(img_pre, (-1000, 300))
+
+            lmk_pre_maxi = np.genfromtxt(pjoin(all_cases_root, case_name, 'maxilla_landmark.txt'))
+            lmk_pre_mand = np.genfromtxt(pjoin(all_cases_root, case_name, 'mandible_landmark.txt'))
+            lmk_pre_skin = np.genfromtxt(pjoin(all_cases_root, case_name, 'skin_landmark.txt'))
+            if np.isnan(lmk_pre_maxi).any():
+                lmk_pre_maxi = np.genfromtxt(pjoin(all_cases_root, case_name, 'maxilla_landmark.txt'), delimiter=',')
+            if np.isnan(lmk_pre_mand).any():
+                lmk_pre_mand = np.genfromtxt(pjoin(all_cases_root, case_name, 'mandible_landmark.txt'), delimiter=',')
+            if np.isnan(lmk_pre_skin).any():
+                lmk_pre_skin = np.genfromtxt(pjoin(all_cases_root, case_name, 'skin_landmark.txt'), delimiter=',')
+
+            ff_horizontal_normal = np.cross(lmk_pre_maxi[15] - lmk_pre_maxi[9], lmk_pre_maxi[16] - lmk_pre_maxi[10])
+
+            img_pre = load_nifti(glob_root(pjoin(all_cases_root, case_name, '*-pre.nii.gz'))[0])
+            seg_pre = threshold_image(img_pre, all_threshold)
             skin_pre = mask_to_object(seg_pre)
+            seg_pre_bone = threshold_image(img_pre, bone_threshold)
+            bone_pre = mask_to_object(seg_pre_bone)
 
-            prn = np.array(lmk_pre['Prn'])
-            zyr = np.array(lmk_pre["Zy'-R"])
-            zyl = np.array(lmk_pre["Zy'-L"])
 
-            origin = (prn+zyr+zyl)/3
-            normal = np.cross(zyr-prn, zyl-prn)
-            skin_pre_cut = cut_polydata(skin_pre, origin, normal)
-
-            go = np.array(lmk_pre["Go'-R"])/2 + np.array(lmk_pre["Go'-L"])/2
-            skin_pre_cut = cut_polydata(skin_pre_cut, go, [normal[0], normal[2],-normal[1]])
 
             lmk_post = load_landmark(pjoin(lmk_root, case_name, 'skin-post-23.csv'))
-            img_post = load_nifti(glob.glob(pjoin(all_cases_root, case_name, '*-post.nii.gz'))[0])
-            seg_post = threshold_image(img_post, (-1000, 300))
+            img_post = load_nifti(glob_root(pjoin(all_cases_root, case_name, '*-post.nii.gz'))[0])
+            seg_post = threshold_image(img_post, all_threshold)
             skin_post = mask_to_object(seg_post)
 
             t = np.genfromtxt(pjoin(all_cases_root, case_name, case_name+'.tfm'))
@@ -503,23 +579,33 @@ if __name__=='__main__':
             lmk = (np.hstack((lmk, np.ones((lmk.shape[0],1)))) @ t.T)[:,:3].tolist()
             lmk_post = dict(zip(lmk_post.keys(), lmk))
 
-            prn = np.array(lmk_post['Prn'])
-            zyr = np.array(lmk_post["Zy'-R"])
-            zyl = np.array(lmk_post["Zy'-L"])
+            origin = lmk_pre_mand[12]/2 + lmk_pre_mand[13]/2 # midpoint of two bony gonion superior
+            normal = np.array(lmk_pre["Pog'"])-origin # parallel to chin line
+            skin_pre_cut_cut = cut_polydata(skin_pre, np.array(lmk_pre['Prn']) + [0,0,10], ff_horizontal_normal)
+            skin_pre_cut_cut = cut_polydata(skin_pre_cut_cut, origin, normal)
+            skin_pre_cut_cut = cut_polydata(skin_pre_cut_cut, lmk_pre["C"], np.cross(lmk_pre_mand[13]-lmk_pre_mand[22],lmk_pre_mand[12]-lmk_pre_mand[22]))
+            skin_pre_cut = cut_polydata(skin_pre, origin, [0,-1,0])
+            skin_pre_cut = cut_polydata(skin_pre_cut, lmk_pre["Gb'"], [0,0,-1])
+            skin_pre_cut = cut_polydata(skin_pre_cut, lmk_pre["C"], np.cross(lmk_pre_mand[13]-lmk_pre_mand[22],lmk_pre_mand[12]-lmk_pre_mand[22]))
+            skin_post_cut = cut_polydata(skin_post, origin, [0,-1,0])
+            skin_post_cut = cut_polydata(skin_post_cut, lmk_pre["Gb'"], [0,0,-1])
+            skin_post_cut = cut_polydata(skin_post_cut, lmk_pre["C"], np.cross(lmk_pre_mand[13]-lmk_pre_mand[22],lmk_pre_mand[12]-lmk_pre_mand[22]))
 
-            origin = (prn+zyr+zyl)/3
-            normal = np.cross(zyr-prn, zyl-prn)
-            skin_post_cut = cut_polydata(skin_post, origin, normal)
+            actors = [ polydata_actor(m, Color=colors.GetColor3d(colornames[i])) for i,m in enumerate([
+                skin_pre_cut, 
+                skin_pre_cut_cut, 
+                # skin_post_cut, 
+                # bone_pre,
+                landmark_polydata(lmk_pre), 
+                landmark_polydata(lmk_post),
+                ])]
+            # show_actors( case_name, actors + landmark_actors(dict(zip(range(lmk_pre_mand.shape[0]), lmk_pre_mand.tolist()))) )
 
-            go = np.array(lmk_post["Go'-R"])/2 + np.array(lmk_post["Go'-L"])/2
-            skin_post_cut = cut_polydata(skin_post_cut, go, [normal[0], normal[2],-normal[1]])
-
-            show_polydata(case_name, [skin_pre_cut, skin_post_cut, landmark_polydata(lmk_pre), landmark_polydata(lmk_post)], [{'Color':colors.GetColor3d(colornames[i])} for i in range(4)])
-
-            write_polydata(flip_normal_polydata(skin_pre), pjoin(case_dir, 'skin-pre.stl')) 
-            write_polydata(flip_normal_polydata(skin_post), pjoin(case_dir, 'skin-post.stl'))
-            write_polydata(flip_normal_polydata(skin_pre_cut), pjoin(case_dir, 'pre_skin_mesh_ct.stl'))
-            write_polydata(flip_normal_polydata(skin_post_cut), pjoin(case_dir, 'post_skin_mesh_ct.stl'))
+            write_polydata(skin_pre, pjoin(case_dir, 'skin-pre.stl')) 
+            write_polydata(skin_post, pjoin(case_dir, 'skin-post.stl'))
+            write_polydata(skin_pre_cut_cut, pjoin(case_dir, 'pre_skin_mesh_ct.stl'))
+            write_polydata(skin_pre_cut, pjoin(case_dir, 'pre_soft_tissue_ct.stl'))
+            write_polydata(skin_post_cut, pjoin(case_dir, 'post_skin_mesh_ct.stl'))
             write_landmark(lmk_pre, pjoin(case_dir, 'skin-pre-23.csv'))
             write_landmark(lmk_post, pjoin(case_dir, 'skin-post-23.csv'))
  
@@ -530,22 +616,22 @@ if __name__=='__main__':
         segs = ('di','diL','diR','le')
         if not all([isfile(pjoin(case_dir, x)) for x in ['hexmesh_open.inp'] + ['pre_'+s+'.stl' for s in segs] ]):
 
-            shutil.copy(pjoin(segment_root, case_name, 'hexmesh_open.inp'), case_dir)
+            shutil.copy(pjoin(mesh_root, case_name, 'hexmesh_open.inp'), case_dir)
 
             for s in segs:
-                shutil.copy(pjoin(segment_root, case_name, 'pre_'+s+'.stl'), case_dir)
-                if os.path.exists(pjoin(segment_root, case_name, 'pre_'+s+'.tfm')):
-                    shutil.copy(pjoin(segment_root, case_name, 'pre_'+s+'.tfm'), case_dir)
+                shutil.copy(pjoin(mesh_root, case_name, 'pre_'+s+'.stl'), case_dir)
+                if os.path.exists(pjoin(mesh_root, case_name, 'pre_'+s+'.tfm')):
+                    shutil.copy(pjoin(mesh_root, case_name, 'pre_'+s+'.tfm'), case_dir)
 
             s = 'gen'
-            if os.path.exists(pjoin(segment_root, case_name, 'pre_'+s+'.stl')):
-                shutil.copy(pjoin(segment_root, case_name, 'pre_'+s+'.stl'), case_dir)
-                if os.path.exists(pjoin(segment_root, case_name, 'pre_'+s+'.tfm')):
-                    shutil.copy(pjoin(segment_root, case_name, 'pre_'+s+'.tfm'), case_dir)
+            if os.path.exists(pjoin(mesh_root, case_name, 'pre_'+s+'.stl')):
+                shutil.copy(pjoin(mesh_root, case_name, 'pre_'+s+'.stl'), case_dir)
+                if os.path.exists(pjoin(mesh_root, case_name, 'pre_'+s+'.tfm')):
+                    shutil.copy(pjoin(mesh_root, case_name, 'pre_'+s+'.tfm'), case_dir)
 
             s = 'hex_skin.stl'
-            if os.path.exists(pjoin(segment_root, case_name, s)):
-                shutil.copy(pjoin(segment_root, case_name, s), case_dir)
+            if os.path.exists(pjoin(mesh_root, case_name, s)):
+                shutil.copy(pjoin(mesh_root, case_name, s), case_dir)
                 print(case_name, 'has hex skin')
 
 
@@ -553,7 +639,6 @@ if __name__=='__main__':
             nodes, elems = read_inp(pjoin(case_dir, 'hexmesh_open.inp'))
             # seed = seed_grid(nodes, elems)
             node_grid = calculate_node_grid(nodes, elems)
-            print(len(np.unique(node_grid, axis=0)))
             g3d = grid_3d(node_grid)
             g = g3d[:,0,:]
             faces = np.vstack((
@@ -573,14 +658,8 @@ if __name__=='__main__':
             tri.Update()
             polyd = tri.GetOutput()
             write_polydata(polyd, pjoin(case_dir, 'hex_skin.stl'))
-            # show_polydata(case_name, [polyd], [{'Color':colors.GetColor3d(colornames[i])} for i in range(1)])
  
         
-
-        if not os.path.exists(pjoin(case_dir, 'pre_skin_mesh_ct.stl')):
-            pass
-            
-
 
 
 
@@ -590,9 +669,101 @@ if __name__=='__main__':
 
 
 
-    # extra_cases = glob.glob('n*', root_dir=working_root)
-    # completed_cases = glob.glob('n*', root_dir=completed_cases_root)
+    # extra_cases = glob_root('n*', root_dir=working_root)
+    # completed_cases = glob_root('n*', root_dir=completed_cases_root)
     # for case_name in extra_cases:
     #     if case_name in completed_cases:
     #         shutil.move(case_dir, pjoin(working_root, 'finished'))
 
+    nodes, elems = read_inp(r'C:\Users\tmhtxk25\Box\Facial Prediction_DK_TK\recent_cases\n0004\hexmesh_open.inp')
+    node_grid = calculate_node_grid(nodes, elems)
+    _, cols = np.mgrid[range(elems.shape[0]), range(elems.shape[1])]
+    lip_ind = lip_node_index(node_grid)
+    id = np.isin(elems, lip_ind)
+    lip_ind, side = elems[id], seed()[cols[id], 2]
+    lip_upper, lip_lower = np.unique(lip_ind[side>0]), np.unique(lip_ind[side<0])
+    lip_upper = lip_upper[np.argsort(node_grid[lip_upper,0])]
+    lip_upper = lip_upper[np.argsort(node_grid[lip_upper,1])].reshape(6,-1).T
+    lip_lower = lip_lower[np.argsort(node_grid[lip_lower,0])]
+    lip_lower = lip_lower[np.argsort(node_grid[lip_lower,1])].reshape(6,-1).T
+
+
+
+
+    '''
+    lower_lip_node_index =
+
+        47157       47124       47091       47058       46992       46993
+        47158       47125       47092       47059       46994       46995
+        47159       47126       47093       47060       46996       46997
+        47160       47127       47094       47061       46998       46999
+        47161       47128       47095       47062       47000       47001
+        47162       47129       47096       47063       47002       47003
+        47163       47130       47097       47064       47004       47005
+        47164       47131       47098       47065       47006       47007
+        47165       47132       47099       47066       47008       47009
+        47166       47133       47100       47067       47010       47011
+        47167       47134       47101       47068       47012       47013
+        47168       47135       47102       47069       47014       47015
+        47169       47136       47103       47070       47016       47017
+        47170       47137       47104       47071       47018       47019
+        47171       47138       47105       47072       47020       47021
+        47172       47139       47106       47073       47022       47023
+        47173       47140       47107       47074       47024       47025
+        47174       47141       47108       47075       47026       47027
+        47175       47142       47109       47076       47028       47029
+        47176       47143       47110       47077       47030       47031
+        47177       47144       47111       47078       47032       47033
+        47178       47145       47112       47079       47034       47035
+        47179       47146       47113       47080       47036       47037
+        47180       47147       47114       47081       47038       47039
+        47181       47148       47115       47082       47040       47041
+        47182       47149       47116       47083       47042       47043
+        47183       47150       47117       47084       47044       47045
+        47184       47151       47118       47085       47046       47047
+        47185       47152       47119       47086       47048       47049
+        47186       47153       47120       47087       47050       47051
+        47187       47154       47121       47088       47052       47053
+        47188       47155       47122       47089       47054       47055
+        47189       47156       47123       47090       47056       47057
+        
+    upper_lip_node_index =
+
+        31978       31889       31800       31711       31560       31561
+        31979       31890       31801       31712       31562       31563
+        31980       31891       31802       31713       31564       31565
+        31981       31892       31803       31714       31566       31567
+        31982       31893       31804       31715       31568       31569
+        31983       31894       31805       31716       31570       31571
+        31984       31895       31806       31717       31572       31573
+        31985       31896       31807       31718       31574       31575
+        31986       31897       31808       31719       31576       31577
+        31987       31898       31809       31720       31578       31579
+        31988       31899       31810       31721       31580       31581
+        31989       31900       31811       31722       31582       31583
+        31990       31901       31812       31723       31584       31585
+        31991       31902       31813       31724       31586       31587
+        31992       31903       31814       31725       31588       31589
+        31993       31904       31815       31726       31590       31591
+        31994       31905       31816       31727       31592       31593
+        31995       31906       31817       31728       31594       31595
+        31996       31907       31818       31729       31596       31597
+        31997       31908       31819       31730       31598       31599
+        31998       31909       31820       31731       31600       31601
+        31999       31910       31821       31732       31602       31603
+        32000       31911       31822       31733       31604       31605
+        32001       31912       31823       31734       31606       31607
+        32002       31913       31824       31735       31608       31609
+        32003       31914       31825       31736       31610       31611
+        32004       31915       31826       31737       31612       31613
+        32005       31916       31827       31738       31614       31615
+        32006       31917       31828       31739       31616       31617
+        32007       31918       31829       31740       31618       31619
+        32008       31919       31830       31741       31620       31621
+        32009       31920       31831       31742       31622       31623
+        32010       31921       31832       31743       31624       31625        
+    '''
+
+
+
+    pass
