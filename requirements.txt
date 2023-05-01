@@ -4,7 +4,5 @@ h5py
 pandas
 SimpleITK
 openpyxl
-sklearn
-open3d
 vtk
 PySide6

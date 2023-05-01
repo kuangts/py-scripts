@@ -151,6 +151,8 @@ class HexahedralMesh(_Base):
 
 	@classmethod
 	def read_inp(file):
+		with open(file,'w') as f:
+			s = f.read()
 		match = re.search(r'\*.*NODE[\S ]*\s+(.*)\*.*END NODE.*\*.*ELEMENT[\S ]*\s+(.*)\*.*END ELEMENT', s, re.MULTILINE | re.DOTALL)
 		nodes, elems = match.group(1), match.group(2)
 
@@ -159,7 +161,7 @@ class HexahedralMesh(_Base):
 		nodes = [np.fromstring(node,sep=',', dtype=float) for node in nodes.strip().split('\n')]
 		nodes = np.asarray(nodes[1:])
 		elems = [np.fromstring(node,sep=',', dtype=int) for node in elems.strip().split('\n')]
-		elems = np.asarray(elems[1:])
+		elems = np.asarray(elems[1:])-1
 		return nodes, elems
 
 
