@@ -485,10 +485,9 @@ if __name__=='__main__':
     completed_cases_root = rf'{box_root}\RPI\data\FEM_DL'
     recent_cases_root = rf'{box_root}\Facial Prediction_DK_TK\recent_cases'
     all_cases_root = rf'{data_root}\pre-post-paired-40-send-1122'
-    working_root = rf'C:\data\20230501'
+    working_root = rf'P:\Kuang TianShu - DO NOT TOUCH\20230501'
     lmk_root = rf'{data_root}\pre-post-paired-soft-tissue-lmk-23'
     mesh_root = rf'C:\Users\tmhtxk25\Downloads\meshes'
-    stl_root = rf'P:\Kuang TianShu - DO NOT TOUCH\20230501'
     list_of_files = [
         'hexmesh_open.inp', 
         'pre_skin_mesh_ct.stl', 
@@ -506,7 +505,7 @@ if __name__=='__main__':
 
     override = False # completely redo
     inspection = True # inspect cases
-    
+    other_task = False
 
 
     cases_40 = glob_root('n*', root_dir=all_cases_root)
@@ -531,7 +530,7 @@ if __name__=='__main__':
         case_dir = pjoin(working_root, case_name)
         if all([isfile(pjoin(case_dir, x)) for x in list_of_files]):
             print(f'{case_name} is completed.')
-            if not override and not inspection:
+            if not override and not inspection and not other_task:
                 continue
         else:
             print(f'{case_name} is not complete.')
@@ -666,7 +665,7 @@ if __name__=='__main__':
             tri.SetInputData(polyd)
             tri.Update()
             polyd = tri.GetOutput()
-            write_polydata(polyd, pjoin(case_dir, 'hex_skin.stl'))
+            write_polydata(flip_normal_polydata(polyd), pjoin(case_dir, 'hex_bone.stl'))
 
             g = g3d[:,-1,:]
             faces = np.vstack((
@@ -683,7 +682,7 @@ if __name__=='__main__':
             tri.SetInputData(polyd)
             tri.Update()
             polyd = tri.GetOutput()
-            write_polydata(flip_normal_polydata(polyd), pjoin(case_dir, 'hex_bone.stl'))
+            write_polydata(polyd, pjoin(case_dir, 'hex_skin.stl'))
 
 
         if inspection:
