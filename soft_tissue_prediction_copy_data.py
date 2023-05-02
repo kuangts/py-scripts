@@ -81,17 +81,12 @@ from vtkmodules.vtkImagingMorphological import vtkImageOpenClose3D
 
 from vtk_bridge import *
 
-colornames = [
-            "IndianRed",
-            "Lavender",
-            "Aqua",
-            "Cornsilk",
-            "LightSalmon",
-            "Gold",
-            "GreenYellow",
-            "Pink",
-            "Gainsboro",
-        ]
+colornames = ['IndianRed', 'LightSalmon', 'Pink', 'Gold', 'Lavender', 'GreenYellow', 'Aqua', 'Cornsilk', 'White', 'Gainsboro',
+              'LightCoral', 'Coral', 'LightPink', 'Yellow', 'Thistle', 'Chartreuse', 'Cyan', 'BlanchedAlmond', 'Snow', 'LightGrey',
+              'Salmon', 'Tomato', 'HotPink', 'LightYellow', 'Plum', 'LawnGreen', 'LightCyan', 'Bisque', 'Honeydew','Silver',
+              'DarkSalmon', 'OrangeRed', 'DeepPink', 'LemonChiffon', 'Violet', 'Lime', 'PaleTurquoise', 'NavajoWhite', 'MintCream',
+              'DarkGray', 'LightSalmon', 'DarkOrange', 'MediumVioletRed', 'LightGoldenrodYellow', 'Orchid', 'LimeGreen', 'Aquamarine', 'Wheat', 'Azure', 'Gray',
+              'Red', 'Orange', 'PaleVioletRed', 'PapayaWhip', 'Fuchsia', 'PaleGreen', 'Turquoise', 'BurlyWood', 'AliceBlue', 'DimGray', 'Crimson']
 
 colors = vtkNamedColors()
 
@@ -236,6 +231,8 @@ def polydata_actor(polyd, **property):
     actor.SetMapper(mapper)
     if property is not None:
         for pk,pv in property.items():
+            if pk=='Color' and isinstance(pv, str):
+                pv = colors.GetColor3d(pv)
             getattr(actor.GetProperty(),'Set'+pk).__call__(pv)
     return actor
 
@@ -481,27 +478,36 @@ def lip_node_index(node_grid):
     return ind
 
 
-
-
-
-
-
-
 if __name__=='__main__':
 
-    box = r'C:\Users\tmhtxk25\Box'
+    box_root = r'C:\Users\tmhtxk25\box'
     data_root = r'C:\data'
-    completed_cases_root = rf'{box}\RPI\data\FEM_DL'
-    recent_cases_root = rf'{box}\Facial Prediction_DK_TK\recent_cases'
+    completed_cases_root = rf'{box_root}\RPI\data\FEM_DL'
+    recent_cases_root = rf'{box_root}\Facial Prediction_DK_TK\recent_cases'
     all_cases_root = rf'{data_root}\pre-post-paired-40-send-1122'
     working_root = rf'C:\data\20230501'
     lmk_root = rf'{data_root}\pre-post-paired-soft-tissue-lmk-23'
     mesh_root = rf'C:\Users\tmhtxk25\Downloads\meshes'
+    stl_root = rf'P:\Kuang TianShu - DO NOT TOUCH\20230501'
+    list_of_files = [
+        'hexmesh_open.inp', 
+        'pre_skin_mesh_ct.stl', 
+        'pre_soft_tissue_ct.stl', 
+        'post_skin_mesh_ct.stl', 
+        'movement_di.tfm', 
+        'movement_diL.tfm', 
+        'movement_diR.tfm', 
+        'movement_le.tfm', 
+        'pre_di.stl',
+        'pre_diL.stl',
+        'pre_diR.stl',
+        'pre_le.stl'
+        ]
 
-    override = True # completely redo
-    do_checking = True
+    override = False # completely redo
+    inspection = True # inspect cases
+    
 
-    list_of_files = ['hexmesh_open.inp', 'pre_skin_mesh_ct.stl', 'pre_soft_tissue_ct.stl', 'post_skin_mesh_ct.stl', 'movement_di.tfm', 'movement_diL.tfm', 'movement_diR.tfm', 'movement_le.tfm', 'pre_di.stl','pre_diL.stl','pre_diR.stl','pre_le.stl']
 
     cases_40 = glob_root('n*', root_dir=all_cases_root)
     cases_done = glob_root('n*_ActualSurgery*', root_dir=completed_cases_root)
@@ -525,7 +531,10 @@ if __name__=='__main__':
         case_dir = pjoin(working_root, case_name)
         if all([isfile(pjoin(case_dir, x)) for x in list_of_files]):
             print(f'{case_name} is completed.')
-            continue
+            if not override and not inspection:
+                continue
+        else:
+            print(f'{case_name} is not complete.')
         os.makedirs(case_dir, exist_ok=True)
 
         #__________________________________________________________________________________________#
@@ -596,12 +605,18 @@ if __name__=='__main__':
         
 
         segs = ('di','diL','diR','le')
-        if os.path.exists(pjoin(mesh_root, case_name, 'pre_'+s+'.stl')):
-            segs += ('gen')
+        if os.path.exists(pjoin(mesh_root, case_name, 'pre_gen.stl')):
+            segs += 'gen', 
             
         if override or not all(isfile(pjoin(case_dir, x)) for x in ['hexmesh_open.inp'] + ['pre_'+s+'.stl' for s in segs] ):
 
             shutil.copy(pjoin(mesh_root, case_name, 'hexmesh_open.inp'), case_dir)
+
+            stl_dir = pjoin(mesh_root, case_name, 'stl')
+            if not isdir(stl_dir):
+                stl_dir = input('specify stl dir: ')
+            if isdir(stl_dir):
+                shutil.move(stl_dir, case_dir)
 
             for s in segs:
                 shutil.copy(pjoin(mesh_root, case_name, 'pre_'+s+'.stl'), case_dir)
@@ -609,17 +624,24 @@ if __name__=='__main__':
                     shutil.copy(pjoin(mesh_root, case_name, 'pre_'+s+'.tfm'), case_dir)
 
 
-        if override or not all(pjoin(case_dir, 'movement_'+s+'.tfm') for s in segs):
+        if override or not all(isfile(pjoin(case_dir, 'movement_'+s+'.tfm')) for s in segs):
             stl_dir = pjoin(case_dir, 'stl')
             if isdir(stl_dir):
                 for s in segs:
-                    stl_name_pre = glob_root('*pre_'+s+'*.stl', root_dir=stl_dir)
-                    stl_name_post = glob_root('*post_'+s+'*.stl', root_dir=stl_dir)
+                    stl_name_pre = [f for f in os.listdir(stl_dir) if re.search('.*pre_'+s+'[_]*[0-9]*'+'.stl', f)]
+                    stl_name_post = [f for f in os.listdir(stl_dir) if re.search('.*post_'+s+'[_]*[0-9]*'+'.stl', f)]
+                    print('found', *stl_name_pre, '/', *stl_name_post)
                     while len(stl_name_pre) != 1:
-                        stl_name_pre = glob_root(input(f'type in pre stl {s} segment name in {stl_dir}'), root_dir=stl_dir)
+                        stl_name_pre = glob_root(input(f'type in pre stl {s} segment name in {stl_dir} : '), root_dir=stl_dir)
                     while len(stl_name_post) != 1:
-                        stl_name_post = glob_root(input(f'type in post stl {s} segment name for {stl_dir}'), root_dir=stl_dir)
-                    register(stl_name_pre[0], stl_name_post[0], pjoin(case_dir, 'movement_'+s+'.tfm'))            
+                        stl_name_post = glob_root(input(f'type in post stl {s} segment name for {stl_dir} : '), root_dir=stl_dir)
+                    register(
+                        pjoin(stl_dir,stl_name_pre[0]), 
+                        pjoin(stl_dir, stl_name_post[0]), 
+                        pjoin(case_dir, 'movement_'+s+'.tfm')
+                        )      
+            else:
+                print('found no stl segment')
 
 
         if override or not os.path.exists(pjoin(case_dir, 'hex_skin.stl')) or not os.path.exists(pjoin(case_dir, 'hex_bone.stl')):
@@ -664,24 +686,35 @@ if __name__=='__main__':
             write_polydata(flip_normal_polydata(polyd), pjoin(case_dir, 'hex_bone.stl'))
 
 
-        if do_checking:
+        if inspection:
 
             skin_pre_cut_cut = read_polydata(pjoin(case_dir, 'pre_skin_mesh_ct.stl'))
             skin_pre_cut = read_polydata(pjoin(case_dir, 'pre_soft_tissue_ct.stl'))
             skin_post_cut = read_polydata(pjoin(case_dir, 'post_skin_mesh_ct.stl'))
-            skin_post_cut = read_polydata(pjoin(case_dir, 'post_soft_tissue_ct.stl'))
+            skin_post_cut_cut = read_polydata(pjoin(case_dir, 'post_soft_tissue_ct.stl'))
             lmk_pre = load_landmark(pjoin(case_dir, 'skin-pre-23.csv'))
             lmk_post = load_landmark(pjoin(case_dir, 'skin-post-23.csv'))
-
-            actors = [ polydata_actor(m, Color=colors.GetColor3d(colornames[i])) for i,m in enumerate([
-                skin_pre_cut, 
-                skin_pre_cut_cut, 
-                skin_post_cut, 
-                landmark_polydata(lmk_pre), 
-                landmark_polydata(lmk_post),
-                ])]
-            show_actors( case_name, actors )
-
+            stls = {}
+            t = {}
+            post_stls = {}
+            for s in segs:
+                stls[s] = read_polydata(pjoin(case_dir, 'pre_'+s+'.stl'))
+                t[s] = np.genfromtxt(pjoin(case_dir, 'movement_'+s+'.tfm'))
+                stls[s] = transform_polydata(stls[s],t[s])
+                stl_dir = pjoin(case_dir,'stl')
+                stl_name_post = [f for f in os.listdir(stl_dir) if re.search('.*post_'+s+'[_]*[0-9]*'+'.stl', f)]
+                while len(stl_name_post) != 1:
+                    stl_name_post = glob_root(input(f'type in post stl {s} segment name for {stl_dir} : '), root_dir=stl_dir)
+                post_stls[s] = read_polydata(pjoin(stl_dir, stl_name_post[0]))
+            show_actors( case_name, [
+                        polydata_actor(skin_pre_cut_cut, Color='LightYellow', Opacity=.5),
+                        polydata_actor(skin_post_cut_cut, Color='Pink', Opacity=.5),
+                        polydata_actor(landmark_polydata(lmk_pre), Color='Silver'),
+                        polydata_actor(landmark_polydata(lmk_post), Color='Cyan')
+                       ] 
+                       + [polydata_actor( s, Color=colors.GetColor3d('Silver')) for s in stls.values()] 
+                       + [polydata_actor( s, Color=colors.GetColor3d('Cyan')) for s in post_stls.values()]
+            ) 
 
 
         if not isfile(pjoin(case_dir,'upper_lip_node_index.txt')) or not isfile(pjoin(case_dir,'lower_lip_node_index.txt')):
