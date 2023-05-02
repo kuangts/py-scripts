@@ -97,7 +97,7 @@ colors = vtkNamedColors()
 
 soft_tissue_threshold = (324, 1249)
 bone_threshold = (1250, 4095)
-all_threshold = (324, 1249)
+all_threshold = (324, 4095)
 
 
 def load_nifti(file):
@@ -336,20 +336,6 @@ def write_landmark(lmk, file):
         csv.writer(f).writerows([[k,*v] for k,v in lmk.items()])
 
 
-def check_case(case_dir):
-
-    lmk_pre = load_landmark(pjoin(case_dir, 'skin-pre-23.csv'))
-    skin_pre = read_polydata(pjoin(case_dir, 'skin-pre.stl'))
-
-    lmk_post = load_landmark(pjoin(case_dir, 'skin-post-23.csv'))
-    skin_post = read_polydata(pjoin(case_dir, 'skin-post.stl'))
-
-    show_polydata(os.path.basename(os.path.normpath(case_name)), 
-              [skin_pre, skin_post, landmark_polydata(lmk_pre), landmark_polydata(lmk_post)], 
-              [{'Color':colors.GetColor3d(colornames[i])} for i in range(4)])
-
-
-
 def register(source, target, result):
 
     T = vtkIterativeClosestPointTransform()
@@ -512,7 +498,8 @@ if __name__=='__main__':
     lmk_root = rf'{data_root}\pre-post-paired-soft-tissue-lmk-23'
     mesh_root = rf'C:\Users\tmhtxk25\Downloads\meshes'
 
-    do_checking = False
+    override = True # completely redo
+    do_checking = True
 
     list_of_files = ['hexmesh_open.inp', 'pre_skin_mesh_ct.stl', 'pre_soft_tissue_ct.stl', 'post_skin_mesh_ct.stl', 'movement_di.tfm', 'movement_diL.tfm', 'movement_diR.tfm', 'movement_le.tfm', 'pre_di.stl','pre_diL.stl','pre_diR.stl','pre_le.stl']
 
@@ -544,7 +531,7 @@ if __name__=='__main__':
         #__________________________________________________________________________________________#
         # first processing, write pre and registered post stl and lmk, cut stl
 
-        if not all([isfile(pjoin(case_dir, x)) for x in ('skin-pre.stl', 'skin-post.stl', 'skin-pre-23.csv', 'skin-post-23.csv', 'pre_skin_mesh_ct.stl', 'pre_soft_tissue_ct.stl', 'post_skin_mesh_ct.stl')]):
+        if override or not all([isfile(pjoin(case_dir, x)) for x in ('skin-pre.stl', 'skin-post.stl', 'skin-pre-23.csv', 'skin-post-23.csv', 'pre_skin_mesh_ct.stl', 'pre_soft_tissue_ct.stl', 'post_skin_mesh_ct.stl')]):
 
             lmk_pre = load_landmark(pjoin(lmk_root, case_name, 'skin-pre-23.csv'))
 
@@ -567,7 +554,6 @@ if __name__=='__main__':
             bone_pre = mask_to_object(seg_pre_bone)
 
 
-
             lmk_post = load_landmark(pjoin(lmk_root, case_name, 'skin-post-23.csv'))
             img_post = load_nifti(glob_root(pjoin(all_cases_root, case_name, '*-post.nii.gz'))[0])
             seg_post = threshold_image(img_post, all_threshold)
@@ -587,34 +573,33 @@ if __name__=='__main__':
             skin_pre_cut = cut_polydata(skin_pre, origin, [0,-1,0])
             skin_pre_cut = cut_polydata(skin_pre_cut, lmk_pre["Gb'"], [0,0,-1])
             skin_pre_cut = cut_polydata(skin_pre_cut, lmk_pre["C"], np.cross(lmk_pre_mand[13]-lmk_pre_mand[22],lmk_pre_mand[12]-lmk_pre_mand[22]))
+            skin_post_cut_cut = cut_polydata(skin_post, np.array(lmk_pre['Prn']) + [0,0,10], ff_horizontal_normal)
+            skin_post_cut_cut = cut_polydata(skin_post_cut_cut, origin, normal)
+            skin_post_cut_cut = cut_polydata(skin_post_cut_cut, lmk_pre["C"], np.cross(lmk_pre_mand[13]-lmk_pre_mand[22],lmk_pre_mand[12]-lmk_pre_mand[22]))
             skin_post_cut = cut_polydata(skin_post, origin, [0,-1,0])
             skin_post_cut = cut_polydata(skin_post_cut, lmk_pre["Gb'"], [0,0,-1])
             skin_post_cut = cut_polydata(skin_post_cut, lmk_pre["C"], np.cross(lmk_pre_mand[13]-lmk_pre_mand[22],lmk_pre_mand[12]-lmk_pre_mand[22]))
 
-            actors = [ polydata_actor(m, Color=colors.GetColor3d(colornames[i])) for i,m in enumerate([
-                skin_pre_cut, 
-                skin_pre_cut_cut, 
-                # skin_post_cut, 
-                # bone_pre,
-                landmark_polydata(lmk_pre), 
-                landmark_polydata(lmk_post),
-                ])]
-            # show_actors( case_name, actors + landmark_actors(dict(zip(range(lmk_pre_mand.shape[0]), lmk_pre_mand.tolist()))) )
 
             write_polydata(skin_pre, pjoin(case_dir, 'skin-pre.stl')) 
             write_polydata(skin_post, pjoin(case_dir, 'skin-post.stl'))
             write_polydata(skin_pre_cut_cut, pjoin(case_dir, 'pre_skin_mesh_ct.stl'))
             write_polydata(skin_pre_cut, pjoin(case_dir, 'pre_soft_tissue_ct.stl'))
+            write_polydata(skin_post_cut_cut, pjoin(case_dir, 'post_soft_tissue_ct.stl'))
             write_polydata(skin_post_cut, pjoin(case_dir, 'post_skin_mesh_ct.stl'))
             write_landmark(lmk_pre, pjoin(case_dir, 'skin-pre-23.csv'))
             write_landmark(lmk_post, pjoin(case_dir, 'skin-post-23.csv'))
  
 
         #__________________________________________________________________________________________#
-        # copy inp mesh and segments, generate hex_skin for cutting, calculate pre->post registration for each segment
+        # copy inp mesh and segments, generate hex_skin, hex_bone for cutting, calculate pre->post registration for each segment
         
+
         segs = ('di','diL','diR','le')
-        if not all([isfile(pjoin(case_dir, x)) for x in ['hexmesh_open.inp'] + ['pre_'+s+'.stl' for s in segs] ]):
+        if os.path.exists(pjoin(mesh_root, case_name, 'pre_'+s+'.stl')):
+            segs += ('gen')
+            
+        if override or not all(isfile(pjoin(case_dir, x)) for x in ['hexmesh_open.inp'] + ['pre_'+s+'.stl' for s in segs] ):
 
             shutil.copy(pjoin(mesh_root, case_name, 'hexmesh_open.inp'), case_dir)
 
@@ -623,19 +608,21 @@ if __name__=='__main__':
                 if os.path.exists(pjoin(mesh_root, case_name, 'pre_'+s+'.tfm')):
                     shutil.copy(pjoin(mesh_root, case_name, 'pre_'+s+'.tfm'), case_dir)
 
-            s = 'gen'
-            if os.path.exists(pjoin(mesh_root, case_name, 'pre_'+s+'.stl')):
-                shutil.copy(pjoin(mesh_root, case_name, 'pre_'+s+'.stl'), case_dir)
-                if os.path.exists(pjoin(mesh_root, case_name, 'pre_'+s+'.tfm')):
-                    shutil.copy(pjoin(mesh_root, case_name, 'pre_'+s+'.tfm'), case_dir)
 
-            s = 'hex_skin.stl'
-            if os.path.exists(pjoin(mesh_root, case_name, s)):
-                shutil.copy(pjoin(mesh_root, case_name, s), case_dir)
-                print(case_name, 'has hex skin')
+        if override or not all(pjoin(case_dir, 'movement_'+s+'.tfm') for s in segs):
+            stl_dir = pjoin(case_dir, 'stl')
+            if isdir(stl_dir):
+                for s in segs:
+                    stl_name_pre = glob_root('*pre_'+s+'*.stl', root_dir=stl_dir)
+                    stl_name_post = glob_root('*post_'+s+'*.stl', root_dir=stl_dir)
+                    while len(stl_name_pre) != 1:
+                        stl_name_pre = glob_root(input(f'type in pre stl {s} segment name in {stl_dir}'), root_dir=stl_dir)
+                    while len(stl_name_post) != 1:
+                        stl_name_post = glob_root(input(f'type in post stl {s} segment name for {stl_dir}'), root_dir=stl_dir)
+                    register(stl_name_pre[0], stl_name_post[0], pjoin(case_dir, 'movement_'+s+'.tfm'))            
 
 
-        if not os.path.exists(pjoin(case_dir, 'hex_skin.stl')):
+        if override or not os.path.exists(pjoin(case_dir, 'hex_skin.stl')) or not os.path.exists(pjoin(case_dir, 'hex_bone.stl')):
             nodes, elems = read_inp(pjoin(case_dir, 'hexmesh_open.inp'))
             # seed = seed_grid(nodes, elems)
             node_grid = calculate_node_grid(nodes, elems)
@@ -658,34 +645,59 @@ if __name__=='__main__':
             tri.Update()
             polyd = tri.GetOutput()
             write_polydata(polyd, pjoin(case_dir, 'hex_skin.stl'))
- 
-        
 
+            g = g3d[:,-1,:]
+            faces = np.vstack((
+                g[:-1,:-1].flat,
+                g[1:,:-1].flat,
+                g[1:,1:].flat,
+                g[:-1,1:].flat,            
+            )).T
+            faces = np.ascontiguousarray(faces).astype(np.int64)
+            polyd = vtkPolyData()
+            polyd.SetPoints(numpy_to_vtkpoints(nodes))
+            polyd.SetPolys(numpy_to_vtkpolys(faces))
+            tri = vtkTriangleFilter()
+            tri.SetInputData(polyd)
+            tri.Update()
+            polyd = tri.GetOutput()
+            write_polydata(flip_normal_polydata(polyd), pjoin(case_dir, 'hex_bone.stl'))
 
 
         if do_checking:
-            check_case(case_dir)
+
+            skin_pre_cut_cut = read_polydata(pjoin(case_dir, 'pre_skin_mesh_ct.stl'))
+            skin_pre_cut = read_polydata(pjoin(case_dir, 'pre_soft_tissue_ct.stl'))
+            skin_post_cut = read_polydata(pjoin(case_dir, 'post_skin_mesh_ct.stl'))
+            skin_post_cut = read_polydata(pjoin(case_dir, 'post_soft_tissue_ct.stl'))
+            lmk_pre = load_landmark(pjoin(case_dir, 'skin-pre-23.csv'))
+            lmk_post = load_landmark(pjoin(case_dir, 'skin-post-23.csv'))
+
+            actors = [ polydata_actor(m, Color=colors.GetColor3d(colornames[i])) for i,m in enumerate([
+                skin_pre_cut, 
+                skin_pre_cut_cut, 
+                skin_post_cut, 
+                landmark_polydata(lmk_pre), 
+                landmark_polydata(lmk_post),
+                ])]
+            show_actors( case_name, actors )
 
 
 
+        if not isfile(pjoin(case_dir,'upper_lip_node_index.txt')) or not isfile(pjoin(case_dir,'lower_lip_node_index.txt')):
+            pass
 
-    # extra_cases = glob_root('n*', root_dir=working_root)
-    # completed_cases = glob_root('n*', root_dir=completed_cases_root)
-    # for case_name in extra_cases:
-    #     if case_name in completed_cases:
-    #         shutil.move(case_dir, pjoin(working_root, 'finished'))
-
-    nodes, elems = read_inp(r'C:\Users\tmhtxk25\Box\Facial Prediction_DK_TK\recent_cases\n0004\hexmesh_open.inp')
-    node_grid = calculate_node_grid(nodes, elems)
-    _, cols = np.mgrid[range(elems.shape[0]), range(elems.shape[1])]
-    lip_ind = lip_node_index(node_grid)
-    id = np.isin(elems, lip_ind)
-    lip_ind, side = elems[id], seed()[cols[id], 2]
-    lip_upper, lip_lower = np.unique(lip_ind[side>0]), np.unique(lip_ind[side<0])
-    lip_upper = lip_upper[np.argsort(node_grid[lip_upper,0])]
-    lip_upper = lip_upper[np.argsort(node_grid[lip_upper,1])].reshape(6,-1).T
-    lip_lower = lip_lower[np.argsort(node_grid[lip_lower,0])]
-    lip_lower = lip_lower[np.argsort(node_grid[lip_lower,1])].reshape(6,-1).T
+            # nodes, elems = read_inp(pjoin(case_dir, 'hexmesh_open.inp'))
+            # node_grid = calculate_node_grid(nodes, elems)
+            # _, cols = np.mgrid[range(elems.shape[0]), range(elems.shape[1])]
+            # lip_ind = lip_node_index(node_grid)
+            # id = np.isin(elems, lip_ind)
+            # lip_ind, side = elems[id], seed()[cols[id], 2]
+            # lip_upper, lip_lower = np.unique(lip_ind[side>0]), np.unique(lip_ind[side<0])
+            # lip_upper = lip_upper[np.argsort(node_grid[lip_upper,0])]
+            # lip_upper = lip_upper[np.argsort(node_grid[lip_upper,1])].reshape(6,-1).T
+            # lip_lower = lip_lower[np.argsort(node_grid[lip_lower,0])]
+            # lip_lower = lip_lower[np.argsort(node_grid[lip_lower,1])].reshape(6,-1).T
 
 
 
@@ -766,4 +778,4 @@ if __name__=='__main__':
 
 
 
-    pass
+
