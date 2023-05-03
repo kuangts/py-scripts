@@ -44,6 +44,7 @@ def main(argv):
     actors = renderer.GetActors()
     if actors.GetNumberOfItems() == 5:
         names.append('gen')
+        names = ['pre_'+s for s in names]
         names.sort(reverse=True)
     if actors.GetNumberOfItems() == 6:
         names.append('gen')
