@@ -46,11 +46,6 @@ def main(argv):
         names.append('gen')
         names = ['pre_'+s for s in names]
         names.sort(reverse=True)
-    if actors.GetNumberOfItems() == 6:
-        names.append('gen')
-        names = ['pre_'+s for s in names]
-        names.append('hex_bone')
-        names.sort(reverse=True)
 
     for i in range(actors.GetNumberOfItems()):
         actor = actors.GetItemAsObject(i)
