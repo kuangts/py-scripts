@@ -123,7 +123,9 @@ def share_vtk_to_numpy(vtk_array):
     num_array_shaped = num_array.reshape(
         vtk_array.GetNumberOfTuples(),
         vtk_array.GetNumberOfComponents()
-        ).squeeze()
+        )
+    if vtk_array.GetNumberOfComponents() == 1:
+        num_array_shaped.squeeze()
     
     # make sure output numpy array and input vtk array point to same data
     if num_array_shaped.__array_interface__['data'][0] == num_array.__array_interface__['data'][0]:
