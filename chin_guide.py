@@ -18,12 +18,12 @@ from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera, vt
 from vtkmodules.vtkIOImage import vtkNIFTIImageReader
 from vtkmodules.vtkFiltersSources import vtkSphereSource 
 from vtkmodules.vtkFiltersCore import vtkFlyingEdges3D, vtkPolyDataNormals, vtkTriangleFilter, vtkClipPolyData, vtkPolyDataConnectivityFilter
-from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData, vtkPolyLine, vtkUnstructuredGrid, vtkImplicitSelectionLoop, vtkPointLocator
 from vtkmodules.vtkCommonMath import vtkMatrix4x4
+from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData, vtkPolyLine, vtkUnstructuredGrid, vtkImplicitSelectionLoop, vtkPointLocator, vtkPlanes, vtkImplicitBoolean, vtkPlaneCollection
 from vtkmodules.vtkCommonCore import vtkPoints, reference, vtkPoints, vtkIdList
 from vtkmodules.vtkInteractionWidgets import vtkPointCloudRepresentation, vtkPointCloudWidget, vtkBoxRepresentation
 from vtkmodules.vtkCommonTransforms import vtkMatrixToLinearTransform, vtkTransform
-from vtkmodules.vtkFiltersGeneral import vtkTransformPolyDataFilter, vtkTransformFilter
+from vtkmodules.vtkFiltersGeneral import vtkTransformPolyDataFilter, vtkTransformFilter, vtkBooleanOperationPolyDataFilter, vtkClipClosedSurface
 from vtkmodules.vtkRenderingCore import vtkBillboardTextActor3D
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
@@ -237,8 +237,8 @@ class ChinGuideMaker():
         self.status = 'view'
         self.key_stack = ''
         self.mandible_placer = vtkPolygonalSurfacePointPlacer()
-        self.knive_thickness = .5
-        self.knive_depth = 4
+        self.knife_thickness = .5
+        self.knife_depth = 4
         self.placed_points = vtkPoints()
         self.seed_points = vtkPoints()
         glyphSource = vtkSphereSource()
@@ -353,14 +353,29 @@ class ChinGuideMaker():
                     locator.BuildLocator()
                     point0, point1 = points[-2], points[-1]
                     normal0, normal1 = normals[locator.FindClosestPoint(point0)], normals[locator.FindClosestPoint(point1)]
-                    self._add_knive(point0, normal0, point1, normal1)
+                    self._insert_knife(point0, normal0, point1, normal1)
+                    # if not hasattr(self, 'knives'):
+                    #     self.knives = knife
+                    #     self.knives_actor.GetMapper().SetInputDataObject(self.knives)
+                    #     self.render_window.Render()
+                    # else:
+                    #     union_filter = vtkBooleanOperationPolyDataFilter()
+                    #     union_filter.SetOperationToUnion()
+                    #     union_filter.SetInputData(0, self.knives_actor.GetMapper().GetInput())
+                    #     union_filter.SetInputData(1, knife)
+                    #     union_filter.Update()
+                    #     self.knives = union_filter.GetOutput()
+                    #     # self.knives = knife
+                    #     self.knives_actor.GetMapper().SetInputDataObject(self.knives)
+                    #     self.render_window.Render()
+
         else:
             obj.OnRightButtonDown()
 
         return None
 
 
-    def _add_knive(self, point0, normal0, point1, normal1):
+    def _insert_knife(self, point0, normal0, point1, normal1):
         
 
         plane_y = np.array(point1) - np.array(point0)
@@ -378,20 +393,41 @@ class ChinGuideMaker():
         M[:3,:3] = np.vstack((plane_x, plane_y, plane_z)).T
         M[:3,3] = np.array(point0)/2 + np.array(point1)/2
         T.GetMatrix().Modified()
-        T.Scale(self.knive_depth*2, d*2, self.knive_thickness*2)
+        T.Scale(self.knife_depth*2, d*2, self.knife_thickness*2)
 
         box_rep = vtkBoxRepresentation()
         box_rep.SetTransform(T)
-        polyd = vtkPolyData()
-        box_rep.GetPolyData(polyd)
+        box = vtkPlanes()
+        box_rep.GetPlanes(box)
+        if not hasattr(self, 'knives'):
+            # self.knives = vtkImplicitBoolean()
+            # self.knives.SetOperationTypeToUnion()
+            self.knives = vtkPlaneCollection()
+        for i in range(6):
+            p = vtkPlane()
+            box.GetPlane(i,p)
+            x,y,z = p.GetNormal()
+            p.SetNormal(-x,-y,-z)
+            self.knives.AddItem(p)
+        # self.knives.AddFunction(box)
+        return None
+
+    
+    def cut_with_knives(self):
+        clipper = vtkClipClosedSurface()
+        clipper.SetClippingPlanes(self.knives)
+        clipper.SetInputData(self.models.mandible)
+        clipper.Update()
+        # clipper = vtkClipPolyData()
+        # clipper.SetClipFunction(self.knives)
+        # clipper.SetInputData(self.models.mandible)
+        # clipper.Update()
+        self.props.mandible.GetProperty().SetOpacity(0)
         mapper = vtkPolyDataMapper()
-        mapper.SetInputData(polyd)
+        mapper.SetInputData(clipper.GetOutput())
         actor = vtkActor()
         actor.SetMapper(mapper)
-        self.renderer.AddActor(actor)
-        self.render_window.Render()
-        
-        pass
+        self.renderer.AddActor(actor)        
 
     def refresh(self):
         self.render_window.Render()
@@ -457,6 +493,12 @@ class ChinGuideMaker():
         self.status = 'polyplane creation'
         self.start_placing_points()
 
+        mapper = vtkPolyDataMapper()
+        self.knives_actor = vtkActor()
+        self.knives_actor.SetMapper(mapper)
+        self.renderer.AddActor(self.knives_actor)
+        self.render_window.Render()
+
         
     def start_seed_points(self):
         self.status = 'seed points'
@@ -487,6 +529,15 @@ class ChinGuideMaker():
 
     def quit_polyplane_creation(self):
         self.quit_placing_points()
+        points = share_vtkpoints_to_numpy(self.placed_points)
+        normals = share_vtk_to_numpy(self.models.mandible.GetPointData().GetNormals())
+        locator = vtkPointLocator()
+        locator.SetDataSet(self.models.mandible)
+        locator.BuildLocator()
+        point0, point1 = points[-1], points[0]
+        normal0, normal1 = normals[locator.FindClosestPoint(point0)], normals[locator.FindClosestPoint(point1)]
+        knife = self._insert_knife(point0, normal0, point1, normal1)
+
         self.start_view()
 
 
@@ -554,6 +605,6 @@ class ChinGuideMaker():
 if __name__=='__main__':
 
     self = ChinGuideMaker()
-    self.load_mandible(r'C:\data\dldx\export\~DLDX021\Mandible.stl', Color='Silver')
+    self.load_mandible(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Desktop\Mandible_Mandible.stl', Color='Silver')
 
     self._start()

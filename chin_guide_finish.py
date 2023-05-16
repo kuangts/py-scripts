@@ -16,8 +16,8 @@ import vtk
 from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera, vtkInteractorStyleTrackballActor, vtkInteractorStyleImage
 from vtkmodules.vtkIOImage import vtkNIFTIImageReader
-from vtkmodules.vtkFiltersSources import vtkSphereSource 
-from vtkmodules.vtkFiltersCore import vtkFlyingEdges3D, vtkPolyDataNormals, vtkTriangleFilter, vtkClipPolyData, vtkPolyDataConnectivityFilter, vtkImplicitPolyDataDistance
+from vtkmodules.vtkFiltersSources import vtkSphereSource, vtkParametricFunctionSource
+from vtkmodules.vtkFiltersCore import vtkFlyingEdges3D, vtkPolyDataNormals, vtkTriangleFilter, vtkClipPolyData, vtkPolyDataConnectivityFilter, vtkImplicitPolyDataDistance, vtkAppendPolyData
 from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData, vtkPolyLine, vtkUnstructuredGrid, vtkImplicitSelectionLoop, vtkPointLocator, vtkImplicitDataSet
 from vtkmodules.vtkCommonMath import vtkMatrix4x4
 from vtkmodules.vtkCommonCore import vtkPoints, reference, vtkPoints, vtkIdList, vtkFloatArray
@@ -42,7 +42,7 @@ from vtkmodules.vtkRenderingCore import (
 from vtkmodules.vtkCommonExecutionModel import vtkAlgorithmOutput
 from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
 
-
+from vtkmodules.vtkCommonComputationalGeometry import vtkParametricSpline
 from vtkmodules.vtkFiltersCore import vtkGlyph3D, vtkPolyDataNormals
 from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkFiltersCore import vtkFlyingEdges3D, vtkSmoothPolyDataFilter, vtkCleanPolyData, vtkFeatureEdges, vtkStripper
@@ -117,7 +117,6 @@ def color_disconnected_regions(input_polyd):
 
 def select_connected_component(input_polyd, seed_points):
 
-
     fil = vtkPolyDataConnectivityFilter()
     fil.SetInputData(input_polyd)
     fil.SetExtractionModeToPointSeededRegions()
@@ -159,6 +158,64 @@ def select_connected_component(input_polyd, seed_points):
 
 
 
+def extrude_surface(polyd:vtkPolyData):
+    normals = share_vtk_to_numpy(polyd.GetPointData().GetNormals())
+    points = share_vtkpoints_to_numpy(polyd.GetPoints())
+    new_points = points + normals * self.extrude_length
+    outer = vtkPolyData()
+    outer.DeepCopy(polyd)
+    outer.SetPoints(share_numpy_to_vtkpoints(new_points))
+
+    edge_filter = vtkFeatureEdges()
+    edge_filter.ExtractAllEdgeTypesOn()
+    edge_filter.BoundaryEdgesOn()
+    edge_filter.SetInputData(polyd)
+    stripper = vtkStripper()
+    stripper.SetInputConnection(edge_filter.GetOutputPort())
+    stripper.Update()
+    stripper_points = share_vtkpoints_to_numpy(stripper.GetOutput().GetPoints())
+    stripper_normals = share_vtk_to_numpy(stripper.GetOutput().GetPointData().GetNormals())
+    new_stripper_points = stripper_points + stripper_normals * self.extrude_length
+    edges = stripper.GetOutput().GetLines()
+    edges = share_vtkpolys_to_numpy(edges)
+    new_edges = edges + stripper_points.shape[0]
+    all_points = np.vstack((stripper_points, new_stripper_points))
+    all_points = share_numpy_to_vtkpoints(all_points)
+
+    ribbon = vtkRuledSurfaceFilter()
+    ribbon.SetRuledModeToPointWalk()
+    ribbon.SetDistanceFactor(100000)
+    ribbon_polyd = vtkPolyData()
+    l0 = vtkPolyLine()
+    l1 = vtkPolyLine()
+    l0.GetPointIds().SetNumberOfIds(edges.size)
+    l1.GetPointIds().SetNumberOfIds(edges.size)
+    for i,k in enumerate(edges.flatten()):
+        l0.GetPointIds().SetId(i,k)
+    for i,k in enumerate(new_edges.flatten()):
+        l1.GetPointIds().SetId(i,k)
+    lines = vtkCellArray()
+    lines.InsertNextCell(l0)
+    lines.InsertNextCell(l1)
+    ribbon_polyd.SetLines(lines)
+    ribbon_polyd.SetPoints(all_points)
+    ribbon.SetInputData(ribbon_polyd)
+    ribbon.Update()
+    skirt = ribbon.GetOutput()
+
+    
+    append = vtkAppendPolyData()
+    append.AddInputData(polyd)
+    append.AddInputData(outer)
+    append.AddInputData(skirt)
+    cleaner = vtkCleanPolyData()
+    cleaner.SetInputConnection(append.GetOutputPort())
+    cleaner.Update()
+    self.add_model('2', cleaner.GetOutput(), Color='IndianRed')
+    self.render_window.Render()
+
+    return None
+    
 
 
 
@@ -188,6 +245,7 @@ class ChinGuideMaker():
         self.key_stack = ''
         self.knive_thickness = .5
         self.knive_depth = 4.
+        self.extrude_length = 2.
         self.picked_points = vtkPoints()
         self.picked_normals = []
         self.picked_points_actor = vtkActor()
@@ -452,6 +510,44 @@ class ChinGuideMaker():
     def start_incision(self):
         self.status = 'incision'
         self.clear_picked_points()
+
+#   vtkNew<vtkParametricSpline> spline;
+#   spline->SetPoints(points);
+
+#   vtkNew<vtkParametricFunctionSource> functionSource;
+#   functionSource->SetParametricFunction(spline);
+#   functionSource->SetUResolution(50 * numberOfPoints);
+#   functionSource->SetVResolution(50 * numberOfPoints);
+#   functionSource->SetWResolution(50 * numberOfPoints);
+
+#   // Create the frame
+#   vtkNew<vtkFrenetSerretFrame> frame;
+#   frame->SetInputConnection(functionSource->GetOutputPort());
+#   frame->ConsistentNormalsOn();
+#   frame->Update();
+
+#   frame->GetOutput()->GetPointData()->SetActiveVectors("FSNormals");
+#   frame->GetOutput()->GetPointData()->SetActiveVectors("FSTangents");
+#   frame->GetOutput()->GetPointData()->SetActiveVectors("FSBinormals");
+
+#   vtkPoints* linePoints = frame->GetOutput()->GetPoints();
+
+#   std::vector<vtkSmartPointer<vtkAppendPolyData>> skeletons;
+#   for (int i = 0; i < numberOfContours; ++i)
+#   {
+#     skeletons.push_back(vtkSmartPointer<vtkAppendPolyData>::New());
+#   }
+
+#   for (int i = 0; i < linePoints->GetNumberOfPoints(); ++i)
+#   {
+#     vtkNew<vtkTransform> transform;
+
+#     // Compute a basis
+#     double normalizedX[3];
+#     frame->GetOutput()->GetPointData()->SetActiveVectors("FSNormals");
+#     frame->GetOutput()->GetPointData()->GetVectors()->GetTuple(i, normalizedX);
+
+
         self.ribbon = vtkRuledSurfaceFilter()
         self.ribbon.SetResolution(10,10)
         self.ribbon.SetRuledModeToResample()
@@ -587,12 +683,15 @@ class ChinGuideMaker():
         return None
 
 
+    def extrude(self):
+        polyd = self.models['0']
+        extrude_surface(polyd)
 
 
 
 if __name__=='__main__':
 
     self = ChinGuideMaker()
-    self.load_mandible(r'C:\data\dldx\export\~DLDX021\Mandible.stl', Color='Silver')
+    self.load_mandible(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Desktop\manu-mand.stl', Color='Silver')
 
     self._start()
