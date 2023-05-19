@@ -13,7 +13,7 @@ from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera, vtkInteractorStyleTrackballActor, vtkInteractorStyleImage
 from vtkmodules.vtkIOImage import vtkNIFTIImageReader
 from vtkmodules.vtkFiltersCore import vtkFlyingEdges3D, vtkPolyDataNormals, vtkTriangleFilter, vtkClipPolyData
-from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData
+from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData, vtkImageData
 from vtkmodules.vtkCommonMath import vtkMatrix4x4
 from vtkmodules.vtkCommonCore import vtkPoints, reference, vtkPoints, vtkIdList
 from vtkmodules.vtkInteractionWidgets import vtkPointCloudRepresentation, vtkPointCloudWidget
@@ -99,13 +99,14 @@ def load_nifti(file):
     src = vtkNIFTIImageReader()
     src.SetFileName(file)
     src.Update()
-    matq = vtkmatrix4x4_to_numpy(src.GetQFormMatrix())
-    mats = vtkmatrix4x4_to_numpy(src.GetSFormMatrix())
+    matq = share_vtkmatrix4x4_to_numpy(src.GetQFormMatrix())
+    mats = share_vtkmatrix4x4_to_numpy(src.GetSFormMatrix())
     assert np.allclose(matq, mats), 'nifti image qform and sform matrices not the same'
     origin = matq[:3,:3] @ matq[:3,3]
-    polyd = src.GetOutput()
-    polyd.SetOrigin(origin.tolist())
-    return polyd
+    img = vtkImageData()
+    img.DeepCopy(src.GetOutput())
+    img.SetOrigin(origin.tolist())
+    return img
 
 
 # def write_image_to_dicom()
@@ -192,8 +193,9 @@ def translate_polydata(polyd, t):
 def transform_polydata(polyd, t):
     T = vtkTransform()
     M = vtkMatrix4x4()
-    arr = vtkmatrix4x4_to_numpy(M)
+    arr = share_vtkmatrix4x4_to_numpy(M)
     arr[...] = t
+    M.Modified()
     T.SetMatrix(M)
     Transform = vtkTransformPolyDataFilter()
     Transform.SetTransform(T)
@@ -289,7 +291,7 @@ def landmark_polydata(lmk):
     lmk_np_nx3 = np.asarray(lmk_np_nx3)
 
     input = vtkPolyData()
-    input.SetPoints(numpy_to_vtkpoints(lmk_np_nx3))
+    input.SetPoints(share_numpy_to_vtkpoints(lmk_np_nx3))
 
     glyphSource = vtkSphereSource()
     glyphSource.SetRadius(1)
@@ -347,7 +349,7 @@ def register(source, target, result):
     T.SetTarget(reader.GetOutput())
 
     T.Update()
-    t = vtkmatrix4x4_to_numpy(T.GetMatrix())
+    t = share_vtkmatrix4x4_to_numpy(T.GetMatrix())
     np.savetxt(result, t, '%+.8e')
 
     
@@ -479,6 +481,7 @@ def lip_node_index(node_grid):
 
 
 if __name__=='__main__':
+
 
     box_root = r'C:\Users\tmhtxk25\box'
     data_root = r'C:\data'
@@ -659,8 +662,8 @@ if __name__=='__main__':
             nodes = np.ascontiguousarray(nodes)
             faces = np.ascontiguousarray(faces).astype(np.int64)
             polyd = vtkPolyData()
-            polyd.SetPoints(numpy_to_vtkpoints(nodes))
-            polyd.SetPolys(numpy_to_vtkpolys(faces))
+            polyd.SetPoints(share_numpy_to_vtkpoints(nodes))
+            polyd.SetPolys(share_numpy_to_vtkpolys(faces))
             tri = vtkTriangleFilter()
             tri.SetInputData(polyd)
             tri.Update()
@@ -676,8 +679,8 @@ if __name__=='__main__':
             )).T
             faces = np.ascontiguousarray(faces).astype(np.int64)
             polyd = vtkPolyData()
-            polyd.SetPoints(numpy_to_vtkpoints(nodes))
-            polyd.SetPolys(numpy_to_vtkpolys(faces))
+            polyd.SetPoints(share_numpy_to_vtkpoints(nodes))
+            polyd.SetPolys(share_numpy_to_vtkpolys(faces))
             tri = vtkTriangleFilter()
             tri.SetInputData(polyd)
             tri.Update()

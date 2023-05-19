@@ -21,9 +21,9 @@ from vtkmodules.vtkFiltersCore import vtkFlyingEdges3D, vtkPolyDataNormals, vtkT
 from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData, vtkPolyLine, vtkUnstructuredGrid, vtkImplicitSelectionLoop, vtkPointLocator, vtkImplicitDataSet
 from vtkmodules.vtkCommonMath import vtkMatrix4x4
 from vtkmodules.vtkCommonCore import vtkPoints, reference, vtkPoints, vtkIdList, vtkFloatArray
-from vtkmodules.vtkInteractionWidgets import vtkPointCloudRepresentation, vtkPointCloudWidget, vtkBoxRepresentation
+from vtkmodules.vtkInteractionWidgets import vtkPointCloudRepresentation, vtkPointCloudWidget, vtkBoxRepresentation, vtkContourWidget
 from vtkmodules.vtkCommonTransforms import vtkMatrixToLinearTransform, vtkTransform
-from vtkmodules.vtkFiltersGeneral import vtkTransformPolyDataFilter, vtkTransformFilter
+from vtkmodules.vtkFiltersGeneral import vtkTransformPolyDataFilter, vtkTransformFilter, vtkBooleanOperationPolyDataFilter 
 from vtkmodules.vtkRenderingCore import vtkBillboardTextActor3D
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
@@ -38,6 +38,7 @@ from vtkmodules.vtkRenderingCore import (
     vtkRenderWindowInteractor,
     vtkRenderer,
     vtkProp3DFollower,
+    vtkCoordinate
 )
 from vtkmodules.vtkCommonExecutionModel import vtkAlgorithmOutput
 from vtkmodules.util.numpy_support import vtk_to_numpy, numpy_to_vtk
@@ -84,7 +85,7 @@ from vtkmodules.vtkIOXML import vtkXMLPolyDataWriter
 from vtkmodules.vtkImagingStatistics import vtkImageAccumulate
 from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
 from vtkmodules.vtkImagingMorphological import vtkImageOpenClose3D
-from vtkmodules.vtkInteractionWidgets import vtkPolygonalSurfacePointPlacer
+from vtkmodules.vtkInteractionWidgets import vtkPolygonalSurfacePointPlacer, vtkOrientedGlyphContourRepresentation
 from vtkmodules.vtkFiltersModeling import vtkSelectPolyData, vtkRibbonFilter
 from vtkmodules.vtkCommonDataModel import (
     vtkCellArray,
@@ -92,6 +93,11 @@ from vtkmodules.vtkCommonDataModel import (
     vtkPolyData
 )
 from vtkmodules.vtkFiltersModeling import vtkRuledSurfaceFilter
+from vtkmodules.vtkInteractionWidgets import vtkWidgetEvent
+
+
+
+
 from vtk_bridge import *
 
 colornames = ['IndianRed', 'LightSalmon', 'Pink', 'Gold', 'Lavender', 'GreenYellow', 'Aqua', 'Cornsilk', 'White', 'Gainsboro',
@@ -103,35 +109,6 @@ colornames = ['IndianRed', 'LightSalmon', 'Pink', 'Gold', 'Lavender', 'GreenYell
 
 colors = vtkNamedColors()
 
-class AttrBook(object): pass
-
-
-def color_disconnected_regions(input_polyd):
-    fil = vtkPolyDataConnectivityFilter()
-    fil.SetInputData(input_polyd)
-    fil.SetExtractionModeToAllRegions()
-    fil.ColorRegionsOn()
-    fil.Update()
-    return fil.GetOutput()
-
-
-def select_connected_component(input_polyd, seed_points):
-
-    fil = vtkPolyDataConnectivityFilter()
-    fil.SetInputData(input_polyd)
-    fil.SetExtractionModeToPointSeededRegions()
-
-    locator = vtkPointLocator()
-    locator.SetDataSet(input_polyd)
-    locator.BuildLocator()
-
-    for i in range(seed_points.GetNumberOfPoints()):
-        id = locator.FindClosestPoint(seed_points.GetPoint(i))
-        fil.AddSeed(id)
-
-    fil.Update()
-
-    return fil.GetOutput()
 
 #    switch (this->GetCellType(cellId))
 #    {
@@ -157,11 +134,38 @@ def select_connected_component(input_polyd, seed_points):
 #    }
 
 
+def color_disconnected_regions(input_polyd:vtkPolyData):
+    fil = vtkPolyDataConnectivityFilter()
+    fil.SetInputData(input_polyd)
+    fil.SetExtractionModeToAllRegions()
+    fil.ColorRegionsOn()
+    fil.Update()
+    return fil.GetOutput()
 
-def extrude_surface(polyd:vtkPolyData):
+
+def select_connected_component(input_polyd:vtkPolyData, seed_points:vtkPoints):
+
+    fil = vtkPolyDataConnectivityFilter()
+    fil.SetInputData(input_polyd)
+    fil.SetExtractionModeToPointSeededRegions()
+
+    locator = vtkPointLocator()
+    locator.SetDataSet(input_polyd)
+    locator.BuildLocator()
+
+    for i in range(seed_points.GetNumberOfPoints()):
+        id = locator.FindClosestPoint(seed_points.GetPoint(i))
+        fil.AddSeed(id)
+
+    fil.Update()
+
+    return fil.GetOutput()
+
+
+def extrude_surface(polyd:vtkPolyData, extrude_length=1):
     normals = share_vtk_to_numpy(polyd.GetPointData().GetNormals())
     points = share_vtkpoints_to_numpy(polyd.GetPoints())
-    new_points = points + normals * self.extrude_length
+    new_points = points + normals * extrude_length
     outer = vtkPolyData()
     outer.DeepCopy(polyd)
     outer.SetPoints(share_numpy_to_vtkpoints(new_points))
@@ -175,7 +179,7 @@ def extrude_surface(polyd:vtkPolyData):
     stripper.Update()
     stripper_points = share_vtkpoints_to_numpy(stripper.GetOutput().GetPoints())
     stripper_normals = share_vtk_to_numpy(stripper.GetOutput().GetPointData().GetNormals())
-    new_stripper_points = stripper_points + stripper_normals * self.extrude_length
+    new_stripper_points = stripper_points + stripper_normals * extrude_length
     edges = stripper.GetOutput().GetLines()
     edges = share_vtkpolys_to_numpy(edges)
     new_edges = edges + stripper_points.shape[0]
@@ -202,7 +206,6 @@ def extrude_surface(polyd:vtkPolyData):
     ribbon.SetInputData(ribbon_polyd)
     ribbon.Update()
     skirt = ribbon.GetOutput()
-
     
     append = vtkAppendPolyData()
     append.AddInputData(polyd)
@@ -211,12 +214,8 @@ def extrude_surface(polyd:vtkPolyData):
     cleaner = vtkCleanPolyData()
     cleaner.SetInputConnection(append.GetOutputPort())
     cleaner.Update()
-    self.add_model('2', cleaner.GetOutput(), Color='IndianRed')
-    self.render_window.Render()
 
-    return None
-    
-
+    return cleaner.GetOutput()
 
 
 
@@ -244,34 +243,26 @@ class ChinGuideMaker():
         self.status = 'view'
         self.key_stack = ''
         self.knive_thickness = .5
-        self.knive_depth = 4.
+        self.knife_depth = 12.
         self.extrude_length = 2.
         self.picked_points = vtkPoints()
         self.picked_normals = []
-        self.picked_points_actor = vtkActor()
         self.seed_points = vtkPoints()
         self.picker = vtkCellPicker()
+        self.display_coordinate = vtkCoordinate()
+        self.display_coordinate.SetCoordinateSystemToDisplay()
+        self.display_coordinate.SetViewport(self.renderer)
+        
         self.picker.SetTolerance(.0005)
         # self.picker.InitializePickList()
         # self.picker.AddPickList(self.bone_actor)
         self.picker.SetPickFromList(False)
 
-        # display selected points
-        glyphSource = vtkSphereSource()
-        glyphSource.SetRadius(1)
-        glyphSource.Update()
-        glyph = vtkGlyph3D()
-        glyph.SetSourceConnection(glyphSource.GetOutputPort())
-        pld = vtkPointSet()
-        pld.SetPoints(self.picked_points)
-        glyph.SetInputData(pld)
-        glyph.SetScaleModeToDataScalingOff()
-        glyph.Update()
-        mapper = vtkPolyDataMapper()
-        mapper.SetInputConnection(glyph.GetOutputPort())
-        self.picked_points_actor.SetMapper(mapper)
-        self.picked_points_actor.GetProperty().SetColor(colors.GetColor3d('tomato'))
-        self.renderer.AddActor(self.picked_points_actor)
+        # display picked points
+        self.add_points('picked_points', self.picked_points, Color='tomato')
+
+        # display seed points
+        self.add_points('seed_points', self.seed_points, radius=.5, Color='Yellow')
 
         self.style.AddObserver('KeyPressEvent', self._key_pressed)
         self.style.AddObserver('CharEvent', lambda *_:None)
@@ -280,12 +271,22 @@ class ChinGuideMaker():
         return None
 
 
+    def refresh(self):
+        self.render_window.Render()
+
+        
+    def kill(self):
+        yn = input('close window? (y/n) \n')
+        if yn.lower() == 'y' or yn.lower() == 'yes':
+            self.render_window.Finalize()
+            self.render_window.End()
+            del self
+
+
     def _start(self):
         self.interactor.Initialize()
         self.render_window.Render()
         self.interactor.Start()
-
-
 
 
     def _key_pressed(self, *args):
@@ -345,40 +346,77 @@ class ChinGuideMaker():
         return None
 
 
-
     def _right_button_pressed(self, obj, event):
 
-        self.picker.Pick(*self.interactor.GetEventPosition(), 0, self.renderer)
+        # 'view' is the default style
         if self.status == 'view':
             obj.OnRightButtonDown()
             return None
-        elif self.picker.GetCellId() == -1:
-            return None
         
-        coord = self.picker.GetPickPosition()
-        normal = self.picker.GetPickNormal()
-        self.picked_points.InsertNextPoint(*coord)
-        self.picked_points.Modified()
-        self.picked_normals.append(normal)
+        # some actions do not require a hit on object
+        # some actions demand separate handling
 
-        if self.status == 'selection loop' or self.status == 'seed points' or self.status == 'incision':
-            self.render_window.Render()
+        if self.status == 'slab intersect':
+            self.display_coordinate.SetValue(*self.interactor.GetEventPosition(), 0)
+            world_coord = self.display_coordinate.GetComputedWorldValue(self.renderer)
+            view_dir = self.renderer.GetActiveCamera().GetDirectionOfProjection()
+            # print(world_coord)
+            # print(view_dir)
+            # self.picked_points.InsertNextPoint(*world_coord)
+            # self.picked_points.Modified()
+            return None
+            
+            
+        # some actions require a hit on object
+        # all action statuses (all except 'view') use populated picked_points
+        self.picker.Pick(*self.interactor.GetEventPosition(), 0, self.renderer)
+        if self.picker.GetCellId() != -1:
+            coord = self.picker.GetPickPosition()
+            normal = self.picker.GetPickNormal()
 
-        if self.status == 'incision':
-            self._add_to_incision(coord, normal)
+            self.picked_points.InsertNextPoint(*coord)
+            self.picked_points.Modified()
+            self.picked_normals.append(normal)
+
+            if self.status == 'seed points':
+                self._add_seed_point(coord)
+            elif self.status == 'ribbon clip':
+                self._add_ribbon_points(coord, normal)
+
+        # some actions require a hit in negative space
+        else:
+            pass
+
+
+        self.refresh()
                 
         return None
 
 
-    def _add_to_incision(self, coord, normal):
-        n = self.ribbon_points.GetNumberOfPoints()//2 + 1
+    def _right_botton_moved(self, obj, event):
+        # some actions do not require a hit on object
+        if self.status == 'slab intersect':
+            coordinate = vtkCoordinate()
+            coordinate.SetCoordinateSystemToDisplay()
+            coordinate.SetValue(*self.interactor.GetEventPosition(), 0)
+            world_coord = coordinate.GetComputedWorldValue(self.renderer)
+
+
+    def _add_seed_point(self, coord):
+        self.seed_points.InsertNextPoint(coord)
+        self.seed_points.Modified()
+        self.props['seed_points'].GetMapper().Update()
+
+
+    def _add_ribbon_points(self, coord, normal):
         normal = np.array(normal)
         coord = np.array(coord)
-        self.ribbon_points.InsertNextPoint(*(coord - normal*self.knive_depth/2))
-        self.ribbon_points.InsertNextPoint(*(coord + normal*self.knive_depth/2))
+        self.ribbon_points.InsertNextPoint(*(coord - normal*self.knife_depth/2))
+        self.ribbon_points.InsertNextPoint(*(coord + normal*self.knife_depth/2))
         self.ribbon_points.Modified()
+        n = self.ribbon_points.GetNumberOfPoints()//2
 
-        if n>=2:
+        if n>1:
             l0 = vtkPolyLine()
             l1 = vtkPolyLine()
             l0.GetPointIds().SetNumberOfIds(n)
@@ -394,13 +432,40 @@ class ChinGuideMaker():
             self.ribbon.SetResolution(n*10,10)
             self.ribbon.Update()
             self.ribbon_actor.GetMapper().Update()
-            self.render_window.Render()
-
-
-
-    def _add_knive(self, point0, normal0, point1, normal1):
         
+        return None
 
+
+    def _add_contour_points(self, coord):
+        normal = np.array(normal)
+        coord = np.array(coord)
+        self.ribbon_points.InsertNextPoint(*(coord - normal*self.knife_depth/2))
+        self.ribbon_points.InsertNextPoint(*(coord + normal*self.knife_depth/2))
+        self.ribbon_points.Modified()
+        n = self.ribbon_points.GetNumberOfPoints()//2
+
+        if n>1:
+            l0 = vtkPolyLine()
+            l1 = vtkPolyLine()
+            l0.GetPointIds().SetNumberOfIds(n)
+            l1.GetPointIds().SetNumberOfIds(n)
+            for i,k in enumerate(range(n)):
+                l0.GetPointIds().SetId(i,k*2)
+            for i,k in enumerate(range(n)):
+                l1.GetPointIds().SetId(i,k*2+1)
+            lines = vtkCellArray()
+            lines.InsertNextCell(l0) 
+            lines.InsertNextCell(l1) 
+            self.ribbon.GetInput().SetLines(lines)
+            self.ribbon.SetResolution(n*10,10)
+            self.ribbon.Update()
+            self.ribbon_actor.GetMapper().Update()
+        
+        return None
+
+
+    def _add_slab(self, point0, normal0, point1, normal1):
+    
         plane_y = np.array(point1) - np.array(point0)
         d = np.sum(plane_y**2)**.5
         kniv_normal = np.cross(np.array(normal0)/2 + np.array(normal1)/2, plane_y)
@@ -416,7 +481,7 @@ class ChinGuideMaker():
         M[:3,:3] = np.vstack((plane_x, plane_y, plane_z)).T
         M[:3,3] = np.array(point0)/2 + np.array(point1)/2
         T.GetMatrix().Modified()
-        T.Scale(self.knive_depth*2, d*2, self.knive_thickness*2)
+        T.Scale(self.knife_depth*2, d*2, self.knive_thickness*2)
 
         box_rep = vtkBoxRepresentation()
         box_rep.SetTransform(T)
@@ -430,17 +495,6 @@ class ChinGuideMaker():
         self.render_window.Render()
         
         pass
-
-    def refresh(self):
-        self.render_window.Render()
-
-        
-    def kill(self):
-        yn = input('close window? (y/n) \n')
-        if yn.lower() == 'y' or yn.lower() == 'yes':
-            self.render_window.Finalize()
-            self.render_window.End()
-            del self
 
     
     def load_mandible(self, stl_file, **properties):
@@ -456,7 +510,7 @@ class ChinGuideMaker():
         return None
 
 
-    def add_model(self, name, polyd, **properties):
+    def add_model(self, name:str, polyd:vtkPolyData, **properties):
 
         if name in self.models or name in self.props:
             self.remove_model(name)
@@ -466,11 +520,10 @@ class ChinGuideMaker():
         calc_normal = vtkPolyDataNormals()
         calc_normal.SetInputConnection(cleaner.GetOutputPort())
         calc_normal.Update()
-        model = calc_normal.GetOutput()
-        self.models[name] = model
+        self.models[name] = calc_normal.GetOutput()
 
         mapper = vtkPolyDataMapper()
-        mapper.SetInputData(model)
+        mapper.SetInputConnection(calc_normal.GetOutputPort())
         actor = vtkActor()
         actor.SetMapper(mapper)
 
@@ -483,6 +536,36 @@ class ChinGuideMaker():
         self.renderer.AddActor(actor)
         self.props[name] = actor
 
+
+    def add_points(self, name:str, points:vtkPoints, radius=1, **properties):
+        
+        glyphSource = vtkSphereSource()
+        glyphSource.SetRadius(radius)
+        glyphSource.Update()
+        glyph = vtkGlyph3D()
+        glyph.SetSourceConnection(glyphSource.GetOutputPort())
+        pld = vtkPointSet()
+        pld.SetPoints(points)
+        glyph.SetInputData(pld)
+        glyph.SetScaleModeToDataScalingOff()
+        glyph.Update()
+        self.models[name] = glyph.GetOutput()
+
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputConnection(glyph.GetOutputPort())
+        actor = vtkActor()
+        actor.SetMapper(mapper)
+        if 'Color' not in properties:
+            properties['Color'] = colornames.pop(0)
+        if isinstance(properties['Color'], str):
+            properties['Color'] = colors.GetColor3d(properties['Color'])
+        for pk,pv in properties.items():
+            getattr(actor.GetProperty(),'Set'+pk).__call__(pv)
+
+        self.renderer.AddActor(actor)
+        self.props[name] = actor
+        return None
+
     
     def remove_model(self, name):
         try:
@@ -492,62 +575,108 @@ class ChinGuideMaker():
             print(e)
         return None
 
+
     def start_view(self):
         self.status = 'view'
         self.refresh()
 
 
-    def start_placing_points(self):
+    def start_picking_points(self):
         self.clear_picked_points()
+        self.refresh()
+
+
+    def start_seed_points(self):
+        self.status = 'seed points'
         self.refresh()
 
 
     def start_selection_loop(self):
         self.status = 'selection loop'
-        self.start_placing_points()
+        self.start_picking_points()
                 
 
-    def start_incision(self):
-        self.status = 'incision'
+    def start_contour_clip(self):
+        
+        self.status = 'contour clip'
+        self.contour_widget = vtkContourWidget()
+        self.contour_widget.SetInteractor(self.interactor)
+        self.contour_widget.AddObserver(vtkWidgetEvent.GetEventIdFromString('Select'), self._contour_widget_select)
+        self.contour_widget.AddObserver(vtkWidgetEvent.GetEventIdFromString('AddFinalPoint'), self._contour_widget_add_final_point)
+        pointPlacer = vtkPolygonalSurfacePointPlacer()
+        pointPlacer.AddProp(self.props['0'])
+
+        rep = self.contour_widget.GetRepresentation()
+        rep.GetLinesProperty().SetColor(colors.GetColor3d("Crimson"))
+        rep.GetLinesProperty().SetLineWidth(3.0)
+        rep.SetPointPlacer(pointPlacer)
+        # rep.ClosedLoopOn() # crush if set
+
+        self.contour_widget.EnabledOn()
+
+        self.ribbon = vtkRuledSurfaceFilter()
+        self.ribbon.SetRuledModeToPointWalk()
+        self.ribbon.SetOnRatio(1)
+        self.ribbon.SetDistanceFactor(10000000)
+        self.ribbon_points = vtkPoints()
+
+        pldt = vtkPolyData()
+        pldt.SetPoints(self.ribbon_points)
+        pldt.SetLines(vtkCellArray())
+        self.ribbon.SetInputData(pldt)
+        self.ribbon_actor = vtkActor()
+        self.ribbon_actor.SetMapper(vtkPolyDataMapper())
+        self.ribbon_actor.GetMapper().SetInputConnection(self.ribbon.GetOutputPort())
+        self.renderer.AddActor(self.ribbon_actor)
+        return None
+
+
+    def _contour_widget_select(self, obj, event):
+        rep = self.contour_widget.GetRepresentation()
+        polyd = rep.GetContourRepresentationAsPolyData()
+        if not polyd.GetPoints() or not polyd.GetPoints().GetNumberOfPoints():
+            return
+        coords = share_vtkpoints_to_numpy(polyd.GetPoints())
+        locator = vtkPointLocator()
+        locator.SetDataSet(self.models['0'])
+        locator.BuildLocator()
+        ids = []
+        for i in range(polyd.GetPoints().GetNumberOfPoints()):
+            ids.append(locator.FindClosestPoint(coords[i].tolist()))
+        normals = share_vtk_to_numpy(self.models['0'].GetPointData().GetNormals())
+        normals = normals[ids]
+
+        self.ribbon_points.DeepCopy(share_numpy_to_vtkpoints(np.vstack((coords-normals,coords+normals))))
+        self.ribbon_points.Modified()
+        n = self.ribbon_points.GetNumberOfPoints()//2
+
+        if n>1:
+            l0 = vtkPolyLine()
+            l1 = vtkPolyLine()
+            l0.GetPointIds().SetNumberOfIds(n)
+            l1.GetPointIds().SetNumberOfIds(n)
+            for i,k in enumerate(range(n)):
+                l0.GetPointIds().SetId(i,k)
+                l1.GetPointIds().SetId(i,k+n)
+            lines = vtkCellArray()
+            lines.InsertNextCell(l0) 
+            lines.InsertNextCell(l1) 
+            self.ribbon.GetInput().SetLines(lines)
+            self.ribbon.Update()
+            self.ribbon_actor.GetMapper().Update()
+        
+        return None
+
+
+
+    def _contour_widget_add_final_point(self, obj, event):
+        pass
+
+
+
+    def start_ribbon_clip(self):
+        self.status = 'ribbon clip'
         self.clear_picked_points()
-
-#   vtkNew<vtkParametricSpline> spline;
-#   spline->SetPoints(points);
-
-#   vtkNew<vtkParametricFunctionSource> functionSource;
-#   functionSource->SetParametricFunction(spline);
-#   functionSource->SetUResolution(50 * numberOfPoints);
-#   functionSource->SetVResolution(50 * numberOfPoints);
-#   functionSource->SetWResolution(50 * numberOfPoints);
-
-#   // Create the frame
-#   vtkNew<vtkFrenetSerretFrame> frame;
-#   frame->SetInputConnection(functionSource->GetOutputPort());
-#   frame->ConsistentNormalsOn();
-#   frame->Update();
-
-#   frame->GetOutput()->GetPointData()->SetActiveVectors("FSNormals");
-#   frame->GetOutput()->GetPointData()->SetActiveVectors("FSTangents");
-#   frame->GetOutput()->GetPointData()->SetActiveVectors("FSBinormals");
-
-#   vtkPoints* linePoints = frame->GetOutput()->GetPoints();
-
-#   std::vector<vtkSmartPointer<vtkAppendPolyData>> skeletons;
-#   for (int i = 0; i < numberOfContours; ++i)
-#   {
-#     skeletons.push_back(vtkSmartPointer<vtkAppendPolyData>::New());
-#   }
-
-#   for (int i = 0; i < linePoints->GetNumberOfPoints(); ++i)
-#   {
-#     vtkNew<vtkTransform> transform;
-
-#     // Compute a basis
-#     double normalizedX[3];
-#     frame->GetOutput()->GetPointData()->SetActiveVectors("FSNormals");
-#     frame->GetOutput()->GetPointData()->GetVectors()->GetTuple(i, normalizedX);
-
-
         self.ribbon = vtkRuledSurfaceFilter()
         self.ribbon.SetResolution(10,10)
         self.ribbon.SetRuledModeToResample()
@@ -562,45 +691,65 @@ class ChinGuideMaker():
         self.ribbon_actor.SetMapper(vtkPolyDataMapper())
         self.ribbon_actor.GetMapper().SetInputConnection(self.ribbon.GetOutputPort())
         self.renderer.AddActor(self.ribbon_actor)
-        self.start_placing_points()
+        self.start_picking_points()
+        return None
 
+
+    def start_slab_clip(self):
+        self.status = 'slab intersect'
+        self.clear_picked_points()
+
+        # if self.picked_points.GetNumberOfPoints() == 1:
+        #     return
         
-    def start_seed_points(self):
-        self.status = 'seed points'
-        self.picked_points.DeepCopy(self.seed_points) 
-        self.picked_points.Modified()
-        self.refresh()  
-        print(self.status)
+        # elif self.picked_points.GetNumberOfPoints() == 2:
+        #     self.ribbon = vtkRuledSurfaceFilter()
+        #     # self.ribbon.SetResolution(10,10)
+        #     self.ribbon.SetRuledModeToPointWalk()
+        #     self.ribbon.SetOnRatio(1)
+        #     self.ribbon.SetDistanceFactor(10000000)
+        #     self.ribbon_points = vtkPoints()
+        #     pldt = vtkPolyData()
+        #     pldt.SetPoints(self.ribbon_points)
+        #     pldt.SetLines(vtkCellArray())
+        #     self.ribbon.SetInputData(pldt)
+        #     self.ribbon_actor = vtkActor()
+        #     self.ribbon_actor.SetMapper(vtkPolyDataMapper())
+        #     self.ribbon_actor.GetMapper().SetInputConnection(self.ribbon.GetOutputPort())
+        #     self.renderer.AddActor(self.ribbon_actor)
+        #     self.start_picking_points()
+
+        # else:
+        #     raise ValueError("shouldn't be here")
+
+        return None
 
 
-    def quit(self):
-        if self.status == 'selection loop' or self.status == 'incision':
-            self.start_view()
-        elif self.status == 'seed points':
-            self.quit_seed_points()
-        elif self.status == 'view':
-            self.kill()
-
-
-    def quit_placing_points(self):
+    def quit_picking_points(self):
         self.clear_picked_points()
         self.refresh()
 
 
     def quit_selection_loop(self):
-        self.quit_placing_points()
+        self.quit_picking_points()
         self.start_view()
 
 
-    def quit_incision(self):
-        self.quit_placing_points()
+    def quit_ribbon_clip(self):
+        self.quit_picking_points()
         self.renderer.RemoveActor(self.ribbon_actor)
+        del self.ribbon_points, self.ribbon, self.ribbon_actor
+        self.start_view()
+
+
+    def quit_contour_clip(self):
+        self.contour_widget.EnabledOff()
+        del self.contour_widget
         self.start_view()
 
 
     def quit_seed_points(self):
-        self.seed_points.DeepCopy(self.picked_points)
-        self.quit_placing_points()
+        self.quit_picking_points()
         self.start_view()
 
 
@@ -622,7 +771,7 @@ class ChinGuideMaker():
             self.clear_picked_points()
 
 
-    def cut_with_selection_loop(self):
+    def clip_with_selection_loop(self):
 
         if self.picked_points.GetNumberOfPoints() < 3 :
             print('must have at least three points in order to cut')
@@ -653,13 +802,13 @@ class ChinGuideMaker():
         clipped.GetPointData().RemoveArray(0)
         self.add_model('1', clipped, Color='Grey')
         
-        self.render_window.Render()
+        self.refresh()
         return None
     
 
-    def cut_with_insicion(self):
+    def close_ribbon_and_clip(self):
         
-        self._add_to_incision(self.picked_points.GetPoint(0), self.picked_normals[0])
+        self._add_ribbon_points(self.picked_points.GetPoint(0), self.picked_normals[0])
         selector = vtkImplicitPolyDataDistance()
         selector.SetInput(self.ribbon.GetOutput())
 
@@ -679,13 +828,66 @@ class ChinGuideMaker():
         clipped.GetPointData().RemoveArray(0)
         self.add_model('1', clipped, Color='Grey')
         
-        self.render_window.Render()
+        self.refresh()
+        return None
+
+
+
+    def ribbon_clip(self):
+        
+        selector = vtkImplicitPolyDataDistance()
+        selector.SetInput(self.ribbon.GetOutput())
+
+        clipper = vtkClipPolyData()
+        clipper.SetInputData(self.models['0'])
+        clipper.SetClipFunction(selector)
+        clipper.InsideOutOn()
+        clipper.GenerateClippedOutputOn()
+        clipper.Update()
+
+        model = clipper.GetOutput(0)
+        model.GetPointData().RemoveArray(0)
+        model = select_connected_component(model, self.seed_points)
+        self.add_model('0', model, Color='IndianRed')
+
+        clipped = clipper.GetOutput(1)
+        clipped.GetPointData().RemoveArray(0)
+        self.add_model('1', clipped, Color='Grey')
+        
+        self.refresh()
+        return None
+
+
+
+
+    def close_ribbon_and_boolean(self):
+        
+        self._add_ribbon_points(self.picked_points.GetPoint(0), self.picked_normals[0])
+        diff_filter = vtkBooleanOperationPolyDataFilter()
+        diff_filter.SetOperationToDifference()
+        diff_filter.SetInputData(0, self.models['0'])
+        diff_filter.SetInputData(1, self.ribbon.GetOutput())
+        diff_filter.Update()
+
+        model = diff_filter.GetOutput(0)
+        model.GetPointData().RemoveArray(0)
+        model = select_connected_component(model, self.seed_points)
+        self.add_model('0', model, Color='IndianRed')
+
+        # clipped = diff_filter.GetOutput(1)
+        # clipped.GetPointData().RemoveArray(0)
+        # self.add_model('1', clipped, Color='Grey')
+        
+        self.refresh()
         return None
 
 
     def extrude(self):
         polyd = self.models['0']
-        extrude_surface(polyd)
+        model = extrude_surface(polyd, self.extrude_length)
+        self.add_model('0', model, Color='IndianRed')
+        self.refresh()
+        
 
 
 
@@ -693,5 +895,5 @@ if __name__=='__main__':
 
     self = ChinGuideMaker()
     self.load_mandible(r'C:\Users\tmhtxk25\OneDrive - Houston Methodist\Desktop\manu-mand.stl', Color='Silver')
-
+    # self._add_seed_point((78.32646120703109, 12.064000941478483, 24.00454019563039))
     self._start()
