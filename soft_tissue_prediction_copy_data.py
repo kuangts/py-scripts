@@ -99,8 +99,8 @@ def load_nifti(file):
     src = vtkNIFTIImageReader()
     src.SetFileName(file)
     src.Update()
-    matq = share_vtkmatrix4x4_to_numpy(src.GetQFormMatrix())
-    mats = share_vtkmatrix4x4_to_numpy(src.GetSFormMatrix())
+    matq = vtkmatrix4x4_to_numpy_(src.GetQFormMatrix())
+    mats = vtkmatrix4x4_to_numpy_(src.GetSFormMatrix())
     assert np.allclose(matq, mats), 'nifti image qform and sform matrices not the same'
     origin = matq[:3,:3] @ matq[:3,3]
     img = vtkImageData()
@@ -159,9 +159,9 @@ def mask_to_object(mask_image):
     smoother.NonManifoldSmoothingOn()
     smoother.NormalizeCoordinatesOn()
     
-    geometry.Update()
+    smoother.Update()
 
-    return geometry.GetOutput()
+    return smoother.GetOutput()
 
 
 def write_polydata(polyd, file):
@@ -193,7 +193,7 @@ def translate_polydata(polyd, t):
 def transform_polydata(polyd, t):
     T = vtkTransform()
     M = vtkMatrix4x4()
-    arr = share_vtkmatrix4x4_to_numpy(M)
+    arr = vtkmatrix4x4_to_numpy_(M)
     arr[...] = t
     M.Modified()
     T.SetMatrix(M)
@@ -291,7 +291,7 @@ def landmark_polydata(lmk):
     lmk_np_nx3 = np.asarray(lmk_np_nx3)
 
     input = vtkPolyData()
-    input.SetPoints(share_numpy_to_vtkpoints(lmk_np_nx3))
+    input.SetPoints(numpy_to_vtkpoints_(lmk_np_nx3))
 
     glyphSource = vtkSphereSource()
     glyphSource.SetRadius(1)
@@ -313,7 +313,7 @@ def landmark_actors(lmk):
             polydata_actor(landmark_polydata(lmk), Color=colors.GetColor3d('tomato')),
         ]
     
-    if isinstance(lmk, dict):
+    if isinstance(lmk, dict): # add labels
         for label, coord in lmk.items():
             txt = vtkBillboardTextActor3D()
             txt.SetPosition(*coord)
@@ -349,7 +349,7 @@ def register(source, target, result):
     T.SetTarget(reader.GetOutput())
 
     T.Update()
-    t = share_vtkmatrix4x4_to_numpy(T.GetMatrix())
+    t = vtkmatrix4x4_to_numpy_(T.GetMatrix())
     np.savetxt(result, t, '%+.8e')
 
     
@@ -483,14 +483,12 @@ def lip_node_index(node_grid):
 if __name__=='__main__':
 
 
-    box_root = r'C:\Users\tmhtxk25\box'
-    data_root = r'C:\data'
-    completed_cases_root = rf'{box_root}\RPI\data\FEM_DL'
-    recent_cases_root = rf'{box_root}\Facial Prediction_DK_TK\recent_cases'
-    all_cases_root = rf'{data_root}\pre-post-paired-40-send-1122'
-    working_root = rf'P:\Kuang TianShu - DO NOT TOUCH\20230501'
+    box_root = r'C:\Users\tians\Box'
+    data_root = r'C:\Users\tians\Box\RPI\data'
+    working_root = rf'P:\20230615'
+    all_cases_root = rf'{data_root}\pre-post-paired-unc40-send-1122'
     lmk_root = rf'{data_root}\pre-post-paired-soft-tissue-lmk-23'
-    mesh_root = rf'C:\Users\tmhtxk25\Downloads\meshes'
+    mesh_root = rf'C:\Users\tians\OneDrive\meshes'
     list_of_files = [
         'hexmesh_open.inp', 
         'pre_skin_mesh_ct.stl', 
@@ -503,31 +501,17 @@ if __name__=='__main__':
         'pre_di.stl',
         'pre_diL.stl',
         'pre_diR.stl',
-        'pre_le.stl'
+        'pre_le.stl',
         ]
 
-    override = False # completely redo
-    inspection = True # inspect cases
+    override = True # completely redo
+    inspection = False # inspect cases
     other_task = False
-
-
-    cases_40 = glob_root('n*', root_dir=all_cases_root)
-    cases_done = glob_root('n*_ActualSurgery*', root_dir=completed_cases_root)
-    cases_done = [f'n{int(x[1:3]):04}' for x in cases_done]
-    cases_recent = glob_root('n*', root_dir=recent_cases_root)
-    cases_recent_not_completed = [x for x in cases_recent if x not in cases_done]
-    print(f'{len(cases_recent_not_completed)} recent cases not completed:', *cases_recent_not_completed)
-    cases_done.sort()
-    cases_working = [x for x in cases_40 if x not in cases_done and x not in cases_recent_not_completed]
-
-
-    try:
-        cases_working.remove('n0042')
-    except:
-        pass
+    cases_working = ['n0056']
     print(f'working on {len(cases_working)} cases:', *cases_working)
 
     os.makedirs(working_root, exist_ok=True)
+
     for case_name in cases_working:
 
         case_dir = pjoin(working_root, case_name)
@@ -662,8 +646,8 @@ if __name__=='__main__':
             nodes = np.ascontiguousarray(nodes)
             faces = np.ascontiguousarray(faces).astype(np.int64)
             polyd = vtkPolyData()
-            polyd.SetPoints(share_numpy_to_vtkpoints(nodes))
-            polyd.SetPolys(share_numpy_to_vtkpolys(faces))
+            polyd.SetPoints(numpy_to_vtkpoints_(nodes))
+            polyd.SetPolys(numpy_to_vtkpolys_(faces))
             tri = vtkTriangleFilter()
             tri.SetInputData(polyd)
             tri.Update()
@@ -679,8 +663,8 @@ if __name__=='__main__':
             )).T
             faces = np.ascontiguousarray(faces).astype(np.int64)
             polyd = vtkPolyData()
-            polyd.SetPoints(share_numpy_to_vtkpoints(nodes))
-            polyd.SetPolys(share_numpy_to_vtkpolys(faces))
+            polyd.SetPoints(numpy_to_vtkpoints_(nodes))
+            polyd.SetPolys(numpy_to_vtkpolys_(faces))
             tri = vtkTriangleFilter()
             tri.SetInputData(polyd)
             tri.Update()
