@@ -123,7 +123,6 @@ if __name__=='__main__':
     
     nodes, elems = read_inp(r'C:\Users\tians\Downloads\n0034\hexmesh.inp')
     node_grid = calculate_grid(nodes, elems)
-    print(node_grid)
     lip_index = lip_node_index(node_grid)
     import scipy
     scipy.io.loadmat(r'C:\Users\tians\Downloads\n0034\lip_node_index.mat')
@@ -137,4 +136,3 @@ if __name__=='__main__':
     lip_index = lip_index[ind]
     
     print(lip_index.reshape(6,-1))
-    
