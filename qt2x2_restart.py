@@ -84,7 +84,7 @@ from PySide6.QtCore import Qt, Signal, Slot, QEvent, QObject
 from PySide6.Qt3DInput import Qt3DInput 
 from PySide6.QtWidgets import QApplication, QMainWindow, QGridLayout, QVBoxLayout, QWidget, QMdiSubWindow, QMdiArea, QDockWidget, QTreeWidgetItem, QTreeWidget, QLabel
 from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor as QVTK
-from vtkmodules.vtkInteractionImage import vtkImageViewer2, vtkResliceImageViewer 
+from vtkmodules.vtkInteractionImage import vtkImageViewer2, vtkResliceImageViewer, vtkResliceImageViewer 
 from enum import Enum, IntFlag, auto
 import numbers
 import asyncio
@@ -92,9 +92,9 @@ import asyncio
 
 from kuang.digitization import library
 
-AXIAL = vtkImageViewer2.SLICE_ORIENTATION_XY
-CORONAL = vtkImageViewer2.SLICE_ORIENTATION_XZ
-SAGITTAL = vtkImageViewer2.SLICE_ORIENTATION_YZ
+AXIAL = vtkResliceImageViewer.SLICE_ORIENTATION_XY
+CORONAL = vtkResliceImageViewer.SLICE_ORIENTATION_XZ
+SAGITTAL = vtkResliceImageViewer.SLICE_ORIENTATION_YZ
 LEFT = 0
 RIGHT = 1
 
@@ -277,7 +277,7 @@ class DataManager(QAppWide):
         src.SetFileName(file)
         src.Update()
         self.image_data = src.GetOutput()
-        self.load_image(self.image_data)
+        # self.load_image(self.image_data)
         # label = threshold_image(self.image_data,(0,1250))
         # polyd = label_to_object(label)
         # mapper = vtkPolyDataMapper()
@@ -337,6 +337,7 @@ class EventHandler(QAppWide):
 
 
     def reslice(self, new_coordinates=(None,)*3):
+        print(new_coordinates)
         # slice all views at the same time
         if not isinstance(self, DataManager) or not self.image_data or not hasattr(self, 'children'):
             return None
@@ -384,17 +385,16 @@ class MyInteractorStyleImage(vtkInteractorStyleImage):
 
 
     def add_observers(self):
-        self.observers['LeftButtonPressEvent'] = self.AddObserver('LeftButtonPressEvent', self.button_event)
-        self.observers['LeftButtonReleaseEvent'] = self.AddObserver('LeftButtonReleaseEvent', self.button_event)
-        self.observers['MouseMoveEvent'] = self.AddObserver('MouseMoveEvent', self.button_event)
+        events = [
+            'LeftButtonPressEvent',
+            'LeftButtonReleaseEvent',
+            'RightButtonPressEvent',
+            'RightButtonReleaseEvent',
+            'MouseMoveEvent',
+            ]
+        self.observers = {e:self.AddObserver(e, self.button_event) for e in events}
         # self.observers['MouseWheelForwardEvent'] = style.AddObserver('MouseWheelForwardEvent', self.scroll_forward_image)
         # self.observers['MouseWheelBackwardEvent'] = style.AddObserver('MouseWheelBackwardEvent', self.scroll_backward_image)
-
-
-    def remove_observers(self):
-        self.RemoveAllObservers()
-        self.observers = {}
-        
 
 
     def pick(self, debug=True):
@@ -417,9 +417,11 @@ class MyInteractorStyleImage(vtkInteractorStyleImage):
 
     def ctrl_on(self):
         return self.GetInteractor().GetControlKey()
-    
+
+
     def alt_on(self):
         return self.GetInteractor().GetAltKey()
+
 
     def button_event(self, obj, event) -> None:
         if event == 'LeftButtonPressEvent':
@@ -428,25 +430,31 @@ class MyInteractorStyleImage(vtkInteractorStyleImage):
         elif event == 'LeftButtonReleaseEvent':
             return self.OnLeftButtonUp()
 
+        elif event == 'RightButtonPressEvent':
+            return self.OnRightButtonDown()
+
+        elif event == 'RightButtonReleaseEvent':
+            return self.OnRightButtonUp()
+
         elif event == 'MouseMoveEvent':
             return self.OnMouseMove()
         
 
     def OnLeftButtonDown(self) -> None:
-
-        if self.button == RIGHT:
-            self.OnRightButtonUp()
+        # self.GetInteractor().InvokeEvent('Reslice')
+        if self.button is not None:
+            if self.button == RIGHT:
+                self.OnRightButtonUp()
+            elif self.button == LEFT:
+                self.OnLeftButtonUp()
             self.button = None
             return None
         
-        elif self.button == LEFT:
-            self.OnLeftButtonUp()
-
         self.button = LEFT
+
         if self.handler:
             self.handler.reslice(self.pick())
             return None
-        
         else:
             return super().OnLeftButtonDown()
     
@@ -456,12 +464,12 @@ class MyInteractorStyleImage(vtkInteractorStyleImage):
             self.handler.reslice(self.pick())
             return None
         else:
-            return super().OnLeftButtonDown()
+            return super().OnMouseMove()
 
 
     def OnLeftButtonUp(self) -> None:
         self.button = None
-        return super().OnLeftButtonDown()
+        return super().OnLeftButtonUp()
     
 
 
@@ -529,23 +537,23 @@ class QVTK(QVTK):
         return super().event(event)
 
 
-class ImageViewer(QVTK, DataManager):
+class SliceViewer(QVTK, DataManager):
     
-    def __init__(self, parent=None, renderer=None, **kw):
+    def __init__(self, parent=None, renderer=None, cursor=None, **kw):
 
         super().__init__(parent=parent, renderer=renderer, **kw)
         
-        self.viewer = vtkImageViewer2()
+        self.viewer = vtkResliceImageViewer()
         self.viewer.SetRenderWindow(self.window)
-        self.viewer.SetRenderer(self.renderer)
-        self.renderer.SetBackground(0.2, 0.2, 0.2)
-            
-        style = MyInteractorStyleImage()
-        style.AutoAdjustCameraClippingRangeOn()
+        self.viewer.SetupInteractor(self)
+        self.viewer.SetResliceModeToAxisAligned()
+        if cursor:
+            self.viewer.SetResliceCursor(cursor)
 
-        style.SetDefaultRenderer(self.renderer)
+        self.renderer.SetBackground(0.2, 0.2, 0.2)
+        style = vtkInteractorStyleImage()
         style.handler = parent
-        self.SetInteractorStyle(style)
+        self.set_style(style)
 
         return None
 
@@ -562,6 +570,8 @@ class ImageViewer(QVTK, DataManager):
     @orientation.setter
     def orientation(self, orientation):
         self.viewer.SetSliceOrientation(orientation)
+        rep = vtk.vtkResliceCursorLineRepresentation.SafeDownCast( self.viewer.GetResliceCursorWidget().GetRepresentation())
+        rep.GetResliceCursorActor().GetCursorAlgorithm().SetReslicePlaneNormal(orientation)
         return None
 
 
@@ -572,6 +582,15 @@ class ImageViewer(QVTK, DataManager):
 
         return None
     
+
+    def set_style(self, new_style):
+        style = self.GetInteractorStyle()
+        if style:
+            style.RemoveAllObservers()
+
+        new_style.AutoAdjustCameraClippingRangeOn()
+        new_style.SetDefaultRenderer(self.renderer)
+        self.SetInteractorStyle(new_style)
 
 # class KeyFilter(QObject):
 #     def eventFilter(self, obj, event):
@@ -592,9 +611,9 @@ class QVTK2x2Window(QWidget, DataManager, EventHandler):
         super().__init__(*initargs)
   
         # create four subviews
-        # vtkImageViewer2.SLICE_ORIENTATION_YZ === 0
-        # vtkImageViewer2.SLICE_ORIENTATION_XZ === 1
-        # vtkImageViewer2.SLICE_ORIENTATION_XY === 2
+        # vtkResliceImageViewer.SLICE_ORIENTATION_YZ === 0
+        # vtkResliceImageViewer.SLICE_ORIENTATION_XZ === 1
+        # vtkResliceImageViewer.SLICE_ORIENTATION_XY === 2
 
         self.ctrl_pressed = False
         self.alt_pressed = False
@@ -605,8 +624,11 @@ class QVTK2x2Window(QWidget, DataManager, EventHandler):
         self.picked_ijk = [float('nan'),]*3
         # three orthogonal views
         for orientation in (2,0,1):
-            
-            subview = ImageViewer(parent=self)
+            cursor = list(self.views.values())[0].viewer.GetResliceCursor() if len(self.views) else None
+            subview = SliceViewer(parent=self, cursor=cursor)
+            print(subview.viewer.SliceChangedEvent)
+            subview.viewer.AddObserver(subview.viewer.SliceChangedEvent, self.reslice)
+            subview.viewer.GetResliceCursorWidget().AddObserver(vtk.vtkResliceCursorWidget.ResliceAxesChangedEvent, self.axis_changed)
             subview.orientation = orientation
             subview.handler = self
             self.views[orientation] = subview
@@ -637,6 +659,14 @@ class QVTK2x2Window(QWidget, DataManager, EventHandler):
         return None
 
 
+    def axis_changed(self, *x):
+        print(x)
+
+    def reslice(self, *coord, ):
+        print(f'coord is {coord}')
+
+
+
     def show(self):
         # self.perspective.display_dummy()
         self.perspective.Render()
@@ -664,84 +694,6 @@ class QVTK2x2Window(QWidget, DataManager, EventHandler):
     
     def get_slice(self):
         return [self.views[o].viewer.GetSlice() for o in range(3)]
-
-
-class LandmarkSidePanel(QWidget):
-
-    def __init__(self, *initargs):
-        super().__init__(*initargs)
-
-        self.tree = QTreeWidget(self)
-        self.name = QLabel(self)
-        self.name.setText('a')
-        self.detail = QLabel(self)
-        self.detail.setText('b')
-        self.vtkWidget = QVTK(self)
-        self.layout = QVBoxLayout(self)
-        self.layout.addWidget(self.tree)
-        self.layout.addWidget(self.name)
-        self.layout.addWidget(self.detail)
-        self.layout.addWidget(self.vtkWidget)
-
-        self.load_lmk_tree()
-        self.current_landmark = None
-
-        self.ren = self.vtkWidget.renderer
-        self.iren = self.vtkWidget.window.GetInteractor()
-
-        # Create source
-        source = vtkSphereSource()
-        source.SetCenter(0, 0, 0)
-        source.SetRadius(5.0)
-
-        # Create a mapper
-        mapper = vtkPolyDataMapper()
-        mapper.SetInputConnection(source.GetOutputPort())
-
-        # Create an actor
-        actor = vtkActor()
-        actor.SetMapper(mapper)
-        self.ren.AddActor(actor)
-        self.ren.ResetCamera()
-        
-
-    def load_lmk_tree(self):
-        
-        self.lib = library.Library(r'CASS.db')
-        groups = {}
-        for d in self.lib:
-            if d.Group not in groups:
-                item = QTreeWidgetItem()
-                item.setText(0, d.Group)
-                self.tree.addTopLevelItem(item)
-                groups[d.Group] = item
-
-            item = QTreeWidgetItem()
-            item.setText(1, d.Name)
-            item.setText(2, d.print_str()['Definition'])
-            groups[d.Group].addChild(item)
-
-        for x in groups.values():
-            self.tree.expandItem(x)
-
-        self.tree.itemClicked.connect(self.lmk_changed)
-
-
-    def lmk_changed(self, item):
-        if len(item.text(1)):
-            item = self.lib.find(Name=item.text(1))
-            if not item:
-                return
-            self.name.setText(item.Name)
-            self.detail.setText(item.print_str()['Fullname'] + '\n' + item.print_str()['Description'])
-            self.current_landmark = item.Name
-
-
-    def show(self, *args, **kwargs):
-        self.load_lmk_tree()
-        super().show(*args, **kwargs)
-        self.iren.Initialize()
-
 
 
     # def pick(self, pos, ren, debug=True):
@@ -861,6 +813,10 @@ class LandmarkSidePanel(QWidget):
                 print("alt pressed")
                 self.alt_pressed = True
                 return True
+            if event.key() == Qt.Key_A.value:
+                print("A pressed")
+                
+                return True
         return False
 
 
@@ -880,6 +836,87 @@ class LandmarkSidePanel(QWidget):
                 return True
         return False
         
+
+
+class LandmarkSidePanel(QWidget):
+
+    def __init__(self, *initargs):
+        super().__init__(*initargs)
+
+        self.tree = QTreeWidget(self)
+        self.name = QLabel(self)
+        self.name.setText('a')
+        self.detail = QLabel(self)
+        self.detail.setText('b')
+        self.vtkWidget = QVTK(self)
+        self.layout = QVBoxLayout(self)
+        self.layout.addWidget(self.tree)
+        self.layout.addWidget(self.name)
+        self.layout.addWidget(self.detail)
+        self.layout.addWidget(self.vtkWidget)
+
+        self.load_lmk_tree()
+        self.current_landmark = None
+
+        self.ren = self.vtkWidget.renderer
+        self.iren = self.vtkWidget.window.GetInteractor()
+
+        # Create source
+        source = vtkSphereSource()
+        source.SetCenter(0, 0, 0)
+        source.SetRadius(5.0)
+
+        # Create a mapper
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputConnection(source.GetOutputPort())
+
+        # Create an actor
+        actor = vtkActor()
+        actor.SetMapper(mapper)
+        self.ren.AddActor(actor)
+        self.ren.ResetCamera()
+        
+
+    def load_lmk_tree(self):
+        
+        self.lib = library.Library(r'CASS.db')
+        groups = {}
+        for d in self.lib:
+            if d.Group not in groups:
+                item = QTreeWidgetItem()
+                item.setText(0, d.Group)
+                self.tree.addTopLevelItem(item)
+                groups[d.Group] = item
+
+            item = QTreeWidgetItem()
+            item.setText(1, d.Name)
+            item.setText(2, d.print_str()['Definition'])
+            groups[d.Group].addChild(item)
+
+        for x in groups.values():
+            self.tree.expandItem(x)
+
+        self.tree.itemClicked.connect(self.lmk_changed)
+
+
+    def lmk_changed(self, item):
+        if len(item.text(1)):
+            item = self.lib.find(Name=item.text(1))
+            if not item:
+                return
+            self.name.setText(item.Name)
+            self.detail.setText(item.print_str()['Fullname'] + '\n' + item.print_str()['Description'])
+            self.current_landmark = item.Name
+
+
+    def show(self, *args, **kwargs):
+        self.load_lmk_tree()
+        super().show(*args, **kwargs)
+        self.iren.Initialize()
+
+
+
+
 
 class AppWindow(QMainWindow, DataManager):
 
