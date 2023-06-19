@@ -1,5 +1,6 @@
 import re, csv
 import numpy as np
+from sklearn.neighbors import NearestNeighbors
 
 
 def read_inp(file):
@@ -15,25 +16,19 @@ def read_inp(file):
     return nodes, elems
 
 
-def seed():
+
+def default_grid_seed():
     return np.array([
-        [+1,+1,+1],
-        [+1,-1,+1],
-        [-1,-1,+1],
-        [-1,+1,+1],
-        [+1,+1,-1],
-        [+1,-1,-1],
-        [-1,-1,-1],
-        [-1,+1,-1],
-    ]) * -1
-
-
-def calculate_grid(nodes, elems):
-    grid_config = np.array([
         [1,1,0,0,1,1,0,0],
         [1,0,0,1,1,0,0,1],
         [1,1,1,1,0,0,0,0]]).T
-    cnfg = grid_config - grid_config.min(axis=0)
+
+
+
+def calculate_grid(nodes, elems, seed=None, calculate_lip_index=False):
+    if not seed:
+        seed = default_grid_seed()
+    seed = seed - seed.min(axis=0)
     node_grid = np.zeros(nodes.shape)
     node_grid[:] = np.nan
     node_grid[elems[0,0],:] = 0
@@ -46,21 +41,61 @@ def calculate_grid(nodes, elems):
         sub_ele = elems[r,:]
         ind_add, id, *_ = np.intersect1d(sub_ele.flatten(), ind_unset, return_indices=True)
         sub_r, sub_c = np.unravel_index(id, sub_ele.shape)
-        node_grid[sub_ele[(sub_r, sub_c)],:] = node_grid[sub_ele[(sub_r, c[sub_r])],:] + cnfg[sub_c,:] - cnfg[c[sub_r],:]
+        node_grid[sub_ele[(sub_r, sub_c)],:] = node_grid[sub_ele[(sub_r, c[sub_r])],:] + seed[sub_c,:] - seed[c[sub_r],:]
     
-    node_grid = node_grid - node_grid.min(axis=0)
+    node_grid -= node_grid.min(axis=0)
+    node_grid = node_grid.astype(int)
     # elem_grid = node_grid[elems.T,:].mean(axis=0)
-    return node_grid.astype(int)
+
+    if calculate_lip_index:
+        g, ind = np.unique(node_grid, axis=0, return_inverse=True)
+        ind_duplicate_grid_positions = np.nonzero(np.bincount(ind)!=1)[0]
+        assert len(np.unique(g[ind_duplicate_grid_positions,2]))==1, 'check mesh'
+        g_dup = g[ind_duplicate_grid_positions,:]
+
+        I = np.concatenate(np.mgrid[
+            g_dup[:,0].min():g_dup[:,0].max()+1,
+            g_dup[:,1].min():g_dup[:,1].max()+1,
+            g_dup[:,2].min():g_dup[:,2].max()+1,
+        ]).reshape(3,-1).T
+
+        nbrs = NearestNeighbors(n_neighbors=2).fit(node_grid)
+        D, ind_lip = nbrs.kneighbors(I)
+        elems_lip = elems[np.isin(elems, ind_lip).any(axis=1),:]
+        elems_lip_center = node_grid[elems_lip.T,:].mean(axis=0)
+        lip_w = elems_lip_center[:,2].mean()
+        ind_upper, ind_lower = \
+            ind_lip[np.isin(ind_lip, elems_lip[elems_lip_center[:,2]>lip_w])].reshape(-1,6),\
+            ind_lip[np.isin(ind_lip, elems_lip[elems_lip_center[:,2]<lip_w])].reshape(-1,6)
+        # return node_grid, ind_upper, ind_lower
+        return node_grid, ind_upper[::-1], ind_lower[::-1] # reorder for legacy reasons
+    else:
+        return node_grid
 
 
 
-def grid_3d(node_grid):
+def grid_3d_from_flat(node_grid):
     g3d = -np.ones(node_grid.max(axis=0)+1, dtype=int)
     g3d[(*node_grid.T,)] = np.arange(node_grid.shape[0])
-    # for i,ng in enumerate(node_grid):
-    #     print(ng)
-    #     g3d[*ng] = i
     return g3d
+
+
+def grid_flat_from_3d(g3d):
+    node_grid = np.empty((g3d.size,3))
+    node_grid[g3d.flat,:] = np.concatenate(np.mgrid[0:g3d.shape[0], 0:g3d.shape[1], 0:g3d.shape[2]]).reshape(3,-1).T
+    return node_grid
+
+
+def elements_from_grid_3d(g3d, seed=None):
+    if not seed:
+        seed = default_grid_seed()
+
+    I = np.ogrid[:g3d.shape[0]-1,:g3d.shape[1]-1,:g3d.shape[2]-1]
+    elems = np.array([g3d[(I[0]+s[0],I[1]+s[1],I[2]+s[2])] for s in seed]).T.reshape(-1,8).astype(np.int64)
+    return elems
+
+
+
 
 
 def seed_grid(nodes, elems):
@@ -107,32 +142,27 @@ def seed_grid(nodes, elems):
     return seed
 
 
-def lip_node_index(node_grid):
-    _, ind = np.unique(node_grid, axis=0, return_index=True)
-    ind_1f = np.setdiff1d(np.arange(node_grid.shape[0]), ind)
-    z_ind = np.unique(node_grid[ind_1f,2])
-    assert len(z_ind)==1, 'check mesh'
-    z_ind = z_ind[0]
-    ind = np.isin(node_grid[:,0], node_grid[ind_1f,0]) & (node_grid[:,2] == z_ind)
-    ind = np.unique(ind.nonzero()[0])
-    assert len(ind)%6 == 0, 'check_mesh'
-    return ind
-
 
 if __name__=='__main__':
     
-    nodes, elems = read_inp(r'C:\Users\tians\Downloads\n0034\hexmesh.inp')
-    node_grid = calculate_grid(nodes, elems)
-    lip_index = lip_node_index(node_grid)
+    nodes, elems = read_inp(r'C:\data\20230501\n0034\hexmesh.inp')
+    node_grid, ind_upper, ind_lower = calculate_grid(nodes, elems, calculate_lip_index=True)
+
     import scipy
-    scipy.io.loadmat(r'C:\Users\tians\Downloads\n0034\lip_node_index.mat')
-    from sklearn.neighbors import NearestNeighbors
-    # nbrs = NearestNeighbors(n_neighbors=1).fit(node_grid)
-    # _, index = nbrs.kneighbors(node_grid[lip_index,:])
-    ind = np.argsort(node_grid[lip_index,2])
-    lip_index = lip_index[ind]
-    
-    ind = np.argsort(node_grid[lip_index,1])
-    lip_index = lip_index[ind]
-    
-    print(lip_index.reshape(6,-1))
+    ind_mat = scipy.io.loadmat(r'C:\data\20230501\n0034\lip_node_index.mat')
+    assert np.all(ind_mat['upper_lip_node_index']-1 == ind_upper) and np.all(ind_mat['lower_lip_node_index']-1 == ind_lower), 'not the same as before'
+
+    lip_mean = nodes[ind_upper,:]/2 + nodes[ind_lower,:]/2
+    nodes[ind_upper,:] = lip_mean
+    nodes[ind_lower,:] = lip_mean
+
+
+
+
+
+
+
+
+
+
+    pass

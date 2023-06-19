@@ -18,7 +18,7 @@ from vtkmodules.vtkCommonDataModel import (
     vtkPlane,
     vtkIterativeClosestPointTransform,
     vtkCellArray,
-    vtkPolyLine
+    vtkPolyLine,
 )
 from vtkmodules.vtkFiltersCore import (
     vtkPolyDataNormals,
@@ -28,7 +28,8 @@ from vtkmodules.vtkFiltersCore import (
     vtkSmoothPolyDataFilter,
     vtkMaskFields,
     vtkThreshold,
-    vtkWindowedSincPolyDataFilter
+    vtkWindowedSincPolyDataFilter,
+    vtkCleanPolyData
 )
 from vtkmodules.vtkFiltersGeneral import (
     vtkTransformPolyDataFilter,
@@ -116,6 +117,13 @@ def write_polydata_to_stl(polyd:vtkPolyData, file:str):
     writer.SetFileTypeToBinary()
     writer.Update()
     writer.Write()
+
+
+def clean_polydata(polyd:vtkPolyData):
+    cleaner = vtkCleanPolyData()
+    cleaner.SetInputData(polyd)
+    cleaner.Update()
+    return cleaner.GetOutput()
 
 
 def translate_polydata(polyd:vtkPolyData, t:numpy.ndarray):
