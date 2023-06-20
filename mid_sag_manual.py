@@ -68,7 +68,7 @@ class Midsag:
         b = [0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
         rgb = np.vstack((r,g,b)).T
         rgb = np.vstack((rgb[::-1,:], rgb)).ravel()
-        self.lut.BuildFunctionFromTable(*ran, len(r), rgb)
+        self.lut.BuildFunctionFromTable(*ran, rgb.shape[0], rgb)
         self.lut.Modified()
 
     def __init__(self, data):
