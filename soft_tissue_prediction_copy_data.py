@@ -101,7 +101,7 @@ def load_nifti(file):
     src.Update()
     matq = vtkmatrix4x4_to_numpy_(src.GetQFormMatrix())
     mats = vtkmatrix4x4_to_numpy_(src.GetSFormMatrix())
-    assert np.allclose(matq, mats), 'nifti image qform and sform matrices not the same'
+    assert np.allclose(matq, mats), 'nifti image qform and sform matrices not the same, requires attention'
     origin = matq[:3,:3] @ matq[:3,3]
     img = vtkImageData()
     img.DeepCopy(src.GetOutput())
@@ -164,7 +164,7 @@ def mask_to_object(mask_image):
     return smoother.GetOutput()
 
 
-def write_polydata(polyd, file):
+def write_polydata(polyd:vtkPolyData, file:str):
     writer = vtkSTLWriter()
     writer.SetInputData(polyd)
     writer.SetFileName(file)
@@ -173,14 +173,14 @@ def write_polydata(polyd, file):
     writer.Write()
 
 
-def read_polydata(file):
+def read_polydata(file:str):
     reader = vtkSTLReader()
     reader.SetFileName(file)
     reader.Update()
     return reader.GetOutput()
 
 
-def translate_polydata(polyd, t):
+def translate_polydata(polyd:vtkPolyData, t:numpy.ndarray):
     T = vtkTransform()
     T.Translate(t)
     Transform = vtkTransformPolyDataFilter()
@@ -190,12 +190,10 @@ def translate_polydata(polyd, t):
     return Transform.GetOutput()
 
 
-def transform_polydata(polyd, t):
+def transform_polydata(polyd, t:numpy.ndarray):
     T = vtkTransform()
     M = vtkMatrix4x4()
-    arr = vtkmatrix4x4_to_numpy_(M)
-    arr[...] = t
-    M.Modified()
+    M.DeepCopy(t.ravel())
     T.SetMatrix(M)
     Transform = vtkTransformPolyDataFilter()
     Transform.SetTransform(T)
