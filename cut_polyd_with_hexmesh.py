@@ -1,6 +1,7 @@
 import os
-from scipy.interpolate import *
+import numpy as np
 from scipy.interpolate import RBFInterpolator
+from scipy.ndimage import morphology
 from general_tools import *
 from mesh_tools import *
 from polydata_tools import *
@@ -13,7 +14,7 @@ def bt(a:numpy.ndarray,lo,hi):
 if __name__ == '__main__':
     os.chdir(r'C:\data\20230501\n0034')
     nodes, elems = read_inp(r'C:\data\20230501\n0034\hexmesh.inp')
-    nodes = np.ascontiguousarray(nodes)
+    nodes = np.ascontiguousarray(nodes)https://www.google.com/url?sa=t&rct=j&q=&esrc=s&source=web&cd=&ved=2ahUKEwjA4b2f2dT_AhXkmGoFHWS-D3YQFnoECA8QAQ&url=https%3A%2F%2Fdocs.scipy.org%2Fdoc%2Fscipy%2Freference%2Fndimage.html&usg=AOvVaw3YxBpRgefC8Grr3fHEsT5I&opi=89978449
     elems = np.ascontiguousarray(elems)
     node_grid, ind_upper, ind_lower = calculate_grid(nodes, elems, calculate_lip_index=True)
 
@@ -44,7 +45,14 @@ if __name__ == '__main__':
     # g = np.concatenate((GU,GV,GW)).reshape(3,-1).T.astype(float)
 
     ind_find = []
-    while 
+    while ind_find.any():
+        ind_take = morphology.binary_
+        RBFInterpolator(NG[g_keep.flat,:], N[g_keep.flat,:], degree=3)(g[ind_find,:])
+
+
+        ind_known[ind_find] = True
+        ind_find = []
+        ind_find = ind_find & ~ind_known
     # g_keep = g3d[:,:3,:]
     # ind_find = g[:,1]<0
     # g[ind_find,:] = RBFInterpolator(NG[g_keep.flat,:], N[g_keep.flat,:], degree=3)(g[ind_find,:])
