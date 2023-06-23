@@ -26,7 +26,7 @@ def imagedata_from_nifti(file):
 
 
 
-def threshold_image(image_data, thresh):
+def threshold_imagedata(image_data, thresh):
     threshold = vtkImageThreshold()
     threshold.SetInputData(image_data)
     threshold.SetInValue(1.0)
