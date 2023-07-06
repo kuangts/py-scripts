@@ -2,6 +2,8 @@ import os, sys, pkg_resources
 required_pkg = ['numpy','scipy','pyvista','vtk']
 try:
     pkg_resources.require(required_pkg)
+except Exception as e:
+    sys.exit(e)
 
 import numpy as np
 from basic import Transform, Pointset, Poly

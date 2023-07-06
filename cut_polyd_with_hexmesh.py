@@ -3,11 +3,11 @@ import numpy as np
 import scipy
 from scipy.interpolate import RBFInterpolator
 from scipy.ndimage import *
-from general_tools import *
-from mesh_tools import *
-from polydata_tools import *
-from rendering_tools import *
-from image_tools import *
+from tools.general import *
+from tools.mesh import *
+from tools.polydata import *
+from tools.rendering import *
+from tools.image import *
 import vtk
 from vtk_bridge import *
 from vtkmodules.vtkFiltersGeneral import vtkClipDataSet
@@ -76,9 +76,9 @@ def task_06222023(ncase, should_display=False):
 
 
     # large skin - pre_soft_tissue_ct & post_skin_mesh_ct
-    N_, E_ = extrapolate_mesh(N, E, ((2,2),(4,4),(2,2)))
+    N_, E_ = extrapolate_mesh(N, E, ((2,2),(6,2),(2,2)))
     G_ = calculate_grid(N_, E_)
-    F_ = boundary_faces(E_).astype(np.int64)
+    F_ = boundary_faces(E_, dims=((True,True),(False,True),(True,True))).astype(np.int64)
     clipper_large = vtkPolyData()
     clipper_large.SetPoints(numpy_to_vtkpoints_(N_))
     clipper_large.SetPolys(numpy_to_vtkpolys_(F_))
@@ -91,7 +91,7 @@ def task_06222023(ncase, should_display=False):
     # small skin - pre_skin_mesh_ct
     G_clip = grid_3d_from_flat(G_)[3:-3,:,3:-3]
     E_clip = elements_from_grid_3d(G_clip)
-    F_ = boundary_faces(E_clip).astype(np.int64)
+    F_ = boundary_faces(E_clip, dims=((True,True),(False,True),(True,True))).astype(np.int64)
     clipper_small = vtkPolyData()
     clipper_small.SetPoints(numpy_to_vtkpoints_(N_))
     clipper_small.SetPolys(numpy_to_vtkpolys_(F_))
@@ -101,8 +101,10 @@ def task_06222023(ncase, should_display=False):
 
     # display
     if should_display:
-        renderWindow, renderer, interactor, style = render_window('')
-        renderer.AddActor(polydata_actor(polyd_clipped, Color='IndianRed'))
+        interactor, renderer = render_window('')
+        renderWindow = interactor.GetRenderWindow()
+        renderer.AddActor(polydata_actor(clipper_large, Color='IndianRed', Opacity=.5))
+        renderer.AddActor(polydata_actor(clipper_small, Color='Aqua', Opacity=.5))
         renderWindow.Render()
         interactor.Start()
 
@@ -110,8 +112,9 @@ def task_06222023(ncase, should_display=False):
 
 
 if __name__ == '__main__':
-    for f in glob.glob(rf'C:\data\meshes\n*'):
-        try:
-            task_06222023(os.path.basename(f))
-        except:
-            print(f)
+    task_06222023('n0056', False)
+    # for f in glob.glob(rf'C:\data\meshes\n*'):
+    #     try:
+    #         task_06222023(os.path.basename(f))
+    #     except:
+    #         print(f)

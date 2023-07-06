@@ -19,6 +19,7 @@ from vtkmodules.vtkCommonDataModel import (
     vtkIterativeClosestPointTransform,
     vtkCellArray,
     vtkPolyLine,
+    vtkVertex
 )
 from vtkmodules.vtkFiltersCore import (
     vtkPolyDataNormals,
@@ -90,7 +91,7 @@ def polydata_from_mask(mask_image:vtkImageData, in_value=1.0, feature_angle=120.
     return smoother.GetOutput()
 
 
-def polydata_from_points(pts:vtkPoints, sphere_radius=1.0):
+def polydata_from_points(pts:vtkPoints, sphere_radius=1.0, return_glyph=False):
 
     input = vtkPolyData()
     input.SetPoints(pts)
@@ -105,7 +106,8 @@ def polydata_from_points(pts:vtkPoints, sphere_radius=1.0):
     glyph3D.SetInputData(input)
     glyph3D.SetScaleModeToDataScalingOff()
     glyph3D.Update()
-
+    if return_glyph:
+        return glyph3D.GetOutput(), glyph3D
     return glyph3D.GetOutput()
 
 

@@ -3,6 +3,10 @@ import numpy as np
 from sklearn.neighbors import NearestNeighbors
 from scipy.interpolate import RBFInterpolator
 from scipy.ndimage import binary_dilation
+from .rendering import *
+from .polydata import *
+from vtk_bridge import *
+
 
 
 def read_inp(file):
@@ -15,7 +19,30 @@ def read_inp(file):
 
     nodes = np.array(list(csv.reader(nodes.strip().split('\n'))), dtype=float)[:,1:]
     elems = np.array(list(csv.reader(elems.strip().split('\n'))), dtype=int)[:,1:] - 1
+
+    nodes, elems = np.ascontiguousarray(nodes), np.ascontiguousarray(elems)
     return nodes, elems
+
+
+def write_inp(f, nodes, elems):
+
+    ndigit = int(np.ceil(np.log10(nodes.shape[0])))
+    edigit = int(np.ceil(np.log10(elems.shape[0])))
+
+    f.write('*HEADING\r\n')
+    f.write('** MESH NODES\r\n** ')
+    f.write(f'Number of nodes {nodes.shape[0]}\r\n')
+    f.write('*NODE\r\n')
+    f.write('\n'.join(f'{i+1:>{ndigit}}, '+', '.join( f'{xx:+.6e}' for xx in x) for i,x in enumerate(nodes)) + '\n')
+    f.write('*END NODE\r\n')
+    
+    f.write('** MESH ELEMENTS\r\n** ')
+    f.write(f'Total number of elements {elems.shape[0]}\r\n')
+    f.write('*ELEMENT, TYPE=C3D8\r\n')
+    f.write('\n'.join(f'{i+1:>{edigit}}, '+', '.join( f'{xx:>{ndigit}}' for xx in x) for i,x in enumerate(elems+1)) + '\n')
+    f.write('*END ELEMENT\r\n')
+    f.write('** End of Data')
+    return None
 
 
 
@@ -31,7 +58,7 @@ def calculate_grid(nodes, elems, seed=None, calculate_lip_index=False):
     if not seed:
         seed = default_grid_seed()
     seed = seed - seed.min(axis=0)
-    node_grid = np.zeros(nodes.shape)
+    node_grid = -np.empty_like(nodes)
     node_grid[:] = np.nan
     node_grid[elems[0,0],:] = 0
     ind_add = elems[0,0]
@@ -45,8 +72,9 @@ def calculate_grid(nodes, elems, seed=None, calculate_lip_index=False):
         sub_r, sub_c = np.unravel_index(id, sub_ele.shape)
         node_grid[sub_ele[(sub_r, sub_c)],:] = node_grid[sub_ele[(sub_r, c[sub_r])],:] + seed[sub_c,:] - seed[c[sub_r],:]
     
-    node_grid -= node_grid.min(axis=0)
-    node_grid = node_grid.astype(int)
+    assert not np.isnan(node_grid).any(), 'error calculate grid'
+
+    node_grid = (node_grid - node_grid.min(axis=0)).astype(elems.dtype)
     # elem_grid = node_grid[elems.T,:].mean(axis=0)
 
     if calculate_lip_index:
@@ -98,15 +126,15 @@ def elements_from_grid_3d(g3d, seed=None):
     return elems
 
 
-def boundary_faces(elems, seed=None):
+def boundary_faces(elems, seed=None, dims=((True,)*2,)*3):
     if not seed:
         seed = default_grid_seed()
     nbrs = NearestNeighbors(n_neighbors=1).fit(seed)
     ele_ind = lambda g: nbrs.kneighbors(g)[1].flatten()
     fg = np.array(((0,0),(1,0),(1,1),(0,1)))
     faces = np.empty((0,4), dtype=int)
-    for d in range(3):
-        for v in (0,1):
+    for d,vv in enumerate(dims):
+        for v in np.nonzero(vv)[0]:
             fg3 = ele_ind(np.insert(fg,d,v,axis=1))
             fg3 = fg3[::(1 if v else -1) * (-1 if d==1 else 1)] # this makes sure the normal direction is correct
             fg3_ = ele_ind(np.insert(fg,d,1-v,axis=1))
@@ -154,6 +182,9 @@ def extrapolate_mesh(nodes, elems, bd_size):
         N_[ind_find,:] = RBFInterpolator(g_[ind_take,:], N_[ind_take,:], degree=3)(g_[ind_find,:])
     E_ = elements_from_grid_3d(g3d_)
     return N_, E_
+
+
+
 
 
 

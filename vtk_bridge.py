@@ -14,7 +14,7 @@ set Modified() on vtk objects afterwards to update pipeline
 
 VTK_ID_DTYPE = ID_TYPE_CODE
 
-def numpy_to_vtk_(num_array, number_of_tuples=None, number_of_components=None):
+def numpy_to_vtk_(num_array, number_of_tuples=None, number_of_components=None, result_array=None):
     
     # validate input numpy array
     # type
@@ -31,7 +31,7 @@ def numpy_to_vtk_(num_array, number_of_tuples=None, number_of_components=None):
 
     # continuity
     if not num_array.flags.c_contiguous:
-        raise ValueError('Only c-contiguous arrays are supported. Call numpy.ascontinuous first.')
+        raise ValueError('Only c-contiguous arrays are supported. Call numpy.ascontinuousarray first.')
     
     # ravel numpy array
     num_array_flat = num_array.ravel()
@@ -39,9 +39,10 @@ def numpy_to_vtk_(num_array, number_of_tuples=None, number_of_components=None):
         raise ValueError('Cannot ravel numpy array without copying. Try calling numpy.ascontiguous and make it c-contiguous first.')
         
     # Create an vtk array of the right type.
-    result_array = create_vtk_array(get_vtk_array_type(num_array.dtype))
-    result_array.SetNumberOfTuples(number_of_tuples)
-    result_array.SetNumberOfComponents(number_of_components)
+    if result_array is None:
+        result_array = create_vtk_array(get_vtk_array_type(num_array.dtype))
+        result_array.SetNumberOfTuples(number_of_tuples)
+        result_array.SetNumberOfComponents(number_of_components)
     # save=1 to prevent system from reallocating memory since numpy array owns the data
     result_array.SetVoidArray(num_array_flat, number_of_components*number_of_tuples, 1)
     # numpy array should live as long as vtk array lives, so we maintain a ref to numpy array
@@ -66,7 +67,7 @@ def numpy_to_vtkIdTypeArray_(num_array:numpy.ndarray, number_of_tuples=None, num
     return numpy_to_vtk_(num_array, number_of_tuples, number_of_components)
 
 
-def vtk_to_numpy_(vtk_array, number_of_tuples=None, number_of_components=None):
+def vtk_to_numpy_(vtk_array, number_of_tuples=None, number_of_components=None) -> numpy.ndarray:
     """shares momery of vtk array object with a numpy array
 
     Given a subclass of vtkDataArray, this function returns an
@@ -109,7 +110,7 @@ def vtk_to_numpy_(vtk_array, number_of_tuples=None, number_of_components=None):
     return num_array_shaped
 
 
-def vtkpoints_to_numpy_(pts:vtkPoints):
+def vtkpoints_to_numpy_(pts:vtkPoints) -> numpy.ndarray:
     """wraps vtk_to_numpy_() for convenience
     
     """
@@ -129,17 +130,17 @@ def numpy_to_vtkpoints_(arr:numpy.ndarray, vtk_pts:vtkPoints=None):
     return pts if vtk_pts is None else pts.Modified() 
 
 
-def vtkpolys_to_numpy_(cll:vtkCellArray): 
+def vtkpolys_to_numpy_(cll:vtkCellArray) -> numpy.ndarray: 
     """wraps vtk_to_numpy_() for convenience
     avoid size change on numpy or vtk object
 
     """
 
     n = cll.IsHomogeneous()
-    if n<=0: 
-        raise ValueError('vtkCellArray is empty or heterogeneous')
+    if n<0: 
+        raise ValueError('vtkCellArray is heterogeneous')
     
-    return vtk_to_numpy_(cll.GetConnectivityArray(), -1, n)
+    return vtk_to_numpy_(cll.GetConnectivityArray(), cll.GetNumberOfCells(), n)
 
 
 def numpy_to_vtkpolys_(arr:numpy.ndarray, vtk_cll:vtkCellArray=None):
@@ -158,7 +159,7 @@ def numpy_to_vtkpolys_(arr:numpy.ndarray, vtk_cll:vtkCellArray=None):
         vtk_cll.SetData(vtk_cll.GetOffsetsArray(), numpy_to_vtkIdTypeArray_(arr, arr.size, 1))
 
 
-def swig_to_numpy_(swig_ptr, len, vtk_data_type):
+def swig_to_numpy_(swig_ptr, len, vtk_data_type) -> numpy.ndarray:
     """converts a swig pointer (e.g. _000001bfd4897340_p_void) to a numpy array
     
     """
@@ -168,7 +169,7 @@ def swig_to_numpy_(swig_ptr, len, vtk_data_type):
     return vtk_to_numpy_(vtk_arr)
 
 
-def vtkmatrix4x4_to_numpy_(mtx:vtkMatrix4x4):
+def vtkmatrix4x4_to_numpy_(mtx:vtkMatrix4x4) -> numpy.ndarray:
     """shares a 4x4 vtk matrix with a numpy array
     wraps numpy_to_swig_()
     
