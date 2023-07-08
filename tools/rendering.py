@@ -359,6 +359,8 @@ class Window():
 
 
     def ctrl_left_action(self, obj:vtkInteractorStyle, event):
+        # this is to be overridden by subclass
+        # should be unique for each class
         pass
         
 
@@ -375,7 +377,10 @@ class Window():
 
     def left_button_release_event(self, obj:vtkInteractorStyle, event):
         self.button_status['left'] = 0
-        return obj.OnLeftButtonUp()
+        if obj.GetInteractor().GetControlKey():
+            return self.ctrl_left_action(obj, event)
+        else:
+            return obj.OnLeftButtonUp()
 
     def right_button_press_event(self, obj:vtkInteractorStyle, event):
         self.button_status['right'] = 1

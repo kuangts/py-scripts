@@ -4,7 +4,7 @@ from vtkmodules.vtkRenderingCore import vtkInteractorStyle
 
 from .rendering import *
 from .mesh import *
-
+from .polydata import *
 
 class Selector(Window):
 
@@ -79,9 +79,9 @@ class Selector(Window):
         pass
 
 
-    def add_pick_polydata(self, *polyds):
+    def add_pick_polydata(self, *polyds, **kwargs):
         for pld in polyds:
-            prop = polydata_actor(pld, RenderPointsAsSpheres=True, PointSize=self.DEFAULT_POINT_SIZE)
+            prop = polydata_actor(pld, RenderPointsAsSpheres=True, PointSize=self.DEFAULT_POINT_SIZE, **kwargs)
             # register this prop in pick list and display
             self.renderer.AddActor(prop)
             self.picker.AddPickList(prop)
@@ -110,100 +110,140 @@ class Selector(Window):
         return [m.GetInput() for m in self.get_pick_mappers()]
 
 
-    def ctrl_left_action(self, obj:vtkInteractorStyle, event):
-        pos = obj.GetInteractor().GetEventPosition()
-        self.picker.Pick(pos[0], pos[1], 0, obj.GetDefaultRenderer())
-        self.post_pick()
-        return super().ctrl_left_action(obj, event)
-
-
-    def post_pick(self):
-        pass
-
-
     def get_selection_indices(self):
         pass
 
 
 class PolygonalSurfaceNodeSelector(Selector):
 
-    def post_pick(self):
-        id = self.picker.GetPointId()
-        if id >= 0:
-            verts = self.picker.GetDataSet().GetVerts()
-            ids = vtk_to_numpy_(verts.GetConnectivityArray()).flatten()
-            if id not in ids:
-                verts.InsertNextCell(1,[id])
-                verts.Modified()
-                self.render_window.Render()
-                print(f'number of ids selected: {ids.size}', end='\r')
-        return None
+    def ctrl_left_action(self, obj:vtkInteractorStyle, event):
+
+        if 'Press' in event or 'Move' in event:
+            pos = obj.GetInteractor().GetEventPosition()
+            self.picker.Pick(pos[0], pos[1], 0, obj.GetDefaultRenderer())
+            id = self.picker.GetPointId()
+            if id >= 0:
+                verts = self.picker.GetDataSet().GetVerts()
+                ids = vtk_to_numpy_(verts.GetConnectivityArray()).flatten()
+                if id not in ids:
+                    verts.InsertNextCell(1,[id])
+                    verts.Modified()
+                    self.render_window.Render()
+                    print(f'number of ids selected: {ids.size}', end='\r')
+            return None
+        
+        else:
+            super().ctrl_left_action(obj, event)
+
 
 
 class PolygonalSurfaceGlyphSelector(Selector):
 
+    DEFAULT_GLYPH_COLOR = (1.0, 0.5, 0.5)
+    DEFAULT_SELECTED_GLYPH_COLOR = (0.5, 1.0, 0.5)
+    DEFAULT_CHANGED_GLYPH_COLOR = (1.0, 1.0, 0.5)
+
+
     def __init__(self, glyph_filter:vtkGlyph3D):
         super().__init__()
+
         glyph_filter.GeneratePointIdsOn()
         glyph_filter.Update()
+
+        n_points = glyph_filter.GetInput().GetPoints().GetNumberOfPoints()
+        self.colormap = vtkColorTransferFunction()
+        for i in range(n_points):
+            self.colormap.AddRGBPoint(i, *self.DEFAULT_GLYPH_COLOR)
+
         self.add_pick_polydata(glyph_filter.GetOutput())
         self.glyph_filter = glyph_filter
         self.glyph_picker = vtkCellPicker()
         self.glyph_picker.SetTolerance(self.DEFAULT_PICKER_TOLERANCE)
         self.glyph_picker.InitializePickList()
         self.glyph_picker.SetPickFromList(True)
-        self.glyph_filter.SetColorMode(1)
         mapper = vtkPolyDataMapper()
         mapper.SetInputConnection(self.glyph_filter.GetOutputPort())
+        mapper.SetLookupTable(self.colormap)
+        mapper.SetScalarModeToUsePointFieldData()
+        mapper.SelectColorArray('InputPointIds')
+
         prop = vtkActor()
         prop.SetMapper(mapper)
-        prop.GetProperty().SetColor(colors.GetColor3d('Green'))
+        
+        self.renderer.AddActor(prop)
         self.glyph_picker.AddPickList(prop)
         self.glyph_id = None
-        
+
         return None
+
+
+    def left_button_press_event(self, obj: vtkInteractorStyle, event):
+
+        pos = obj.GetInteractor().GetEventPosition()
+        self.glyph_picker.Pick(pos[0], pos[1], 0, obj.GetDefaultRenderer())
+        
+        if self.glyph_picker.GetCellId() >= 0:
+
+            # direct hit on to one of the landmarks
+            glyph_polyd = self.glyph_filter.GetOutput()
+            if glyph_polyd == self.glyph_picker.GetDataSet():
+
+                # just made sure it is indeed hit on a landmark glyph
+                # figure out which landmark it is
+                ids = glyph_polyd.GetPointData().GetArray('InputPointIds')
+                id_ = vtkIdTypeArray.SafeDownCast(ids).GetTuple(self.glyph_picker.GetPointId())[0]
+                id_ = int(id_)
+
+                if self.glyph_id != id_:
+
+                    # selected a new landmark, so no further action
+                    self.update_glyph(ind=id_)
+                    print(f'selected {self.glyph_id}')
+
+                    return None
+
+        return super().left_button_press_event(obj, event)
 
 
     def ctrl_left_action(self, obj: vtkInteractorStyle, event):
+
         if 'Press' in event:
-            pos = obj.GetInteractor().GetEventPosition()
-            self.glyph_picker.Pick(pos[0], pos[1], 0, obj.GetDefaultRenderer())
-            self.get_glyph_id()
-        elif self.glyph_id:
-            return super().ctrl_left_action(obj, event)
 
+            if self.glyph_id is not None:
 
-    def get_glyph_id(self): # call when pressed
-        self.glyph_id = None
-        id = self.glyph_picker.GetCellId()
-        if id >= 0:
-            glyph_polyd = self.glyph_filter.GetOutput()
-            if glyph_polyd == self.glyph_picker.GetDataSet():
-                ids = glyph_polyd.GetPointData().GetArray('InputPointIds')
-                id = vtkIdTypeArray.SafeDownCast(ids).GetTuple(self.glyph_picker.GetPointId())[0]
-                self.glyph_id = int(id)
+                # a landmark is currently selected, so update its location
+                pos = obj.GetInteractor().GetEventPosition()
+                self.picker.Pick(pos[0], pos[1], 0, obj.GetDefaultRenderer())
 
-        return None
-    
+                if self.picker.GetCellId() >= 0:
+                    self.update_glyph(coords=self.picker.GetPickPosition())
+                print(f'updated {self.glyph_id}, to {self.picker.GetPickPosition()}')
+            
+            else:
 
-    def post_pick(self): # call when moved
-        if self.glyph_id:
-            id = self.picker.GetCellId()
-            if id >= 0:
-                self.update_glyph(self.glyph_id, self.picker.GetPickPosition())
-        return None
+                # misses the landmarks
+                # deselect the current landmark, if any
+                self.glyph_id == None
 
-    def left_button_release_event(self, obj: vtkInteractorStyle, event):
-        self.glyph_id = None
-        return super().left_button_release_event(obj, event)
-    
+            return None
+        
 
+    def update_glyph(self, ind=None, coords=None):
 
-    def update_glyph(self, id, new_coords):
-        vtkPoints.SafeDownCast(self.glyph_filter.GetInput().GetPoints()).SetPoint(id, new_coords)
-        print(id, new_coords)
-        self.glyph_filter.GetInput().GetPoints().Modified()
-        self.glyph_filter.Update()
+        if ind is not None:
+            if self.glyph_id is not None:
+                self.colormap.RemovePoint(self.glyph_id)
+                self.colormap.AddRGBPoint(self.glyph_id, *self.DEFAULT_CHANGED_GLYPH_COLOR)
+            self.colormap.AddRGBPoint(ind, *self.DEFAULT_SELECTED_GLYPH_COLOR)
+            self.glyph_id = ind
+
+        else:
+            ind = self.glyph_id
+
+        if coords:
+            self.glyph_filter.GetInput().GetPoints().SetPoint(ind, coords)
+            self.glyph_filter.GetInput().GetPoints().Modified()
+
         self.render_window.Render()
         return None
 

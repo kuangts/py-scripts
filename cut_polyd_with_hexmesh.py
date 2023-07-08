@@ -3,11 +3,7 @@ import numpy as np
 import scipy
 from scipy.interpolate import RBFInterpolator
 from scipy.ndimage import *
-from tools.general import *
-from tools.mesh import *
-from tools.polydata import *
-from tools.rendering import *
-from tools.image import *
+from tools import *
 import vtk
 from vtk_bridge import *
 from vtkmodules.vtkFiltersGeneral import vtkClipDataSet
