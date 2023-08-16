@@ -1,12 +1,12 @@
-import re, csv
+import os, re, csv
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
 from scipy.interpolate import RBFInterpolator
 from scipy.ndimage import binary_dilation
-from .rendering import *
+from vtkmodules.util.numpy_support import vtk_to_numpy
+from .ui import PolygonalSurfaceNodeSelector
+from .rendering import set_curvatures
 from .polydata import *
-from vtk_bridge import *
-
 
 
 def read_inp(file):
@@ -144,6 +144,47 @@ def boundary_faces(elems, seed=None, dims=((True,)*2,)*3):
     return faces
 
 
+def local_matrices(N,E):
+    gc = [
+        [1,1,0,0,1,1,0,0],
+        [1,0,0,1,1,0,0,1],
+        [1,1,1,1,0,0,0,0],
+    ]
+    gc = np.array(gc).T
+    ind = np.empty(gc.shape, dtype=int)
+    ind[...] = 0
+    for i in range(E.shape[1]):
+        edg = gc-gc[i]
+        ind[i] = np.nonzero(np.sum(edg**2,1)**.5==1)[0]
+        jac = edg[ind[i],:].T
+        vol = np.linalg.det(jac)
+        if vol < 0:
+            ind[i] = ind[i,::-1]
+    
+    return N[E[:,ind]] - N[E[...,None]]
+
+
+def local_volume(N,E):
+
+    edg = local_matrices(N,E)
+    vol = np.linalg.det(edg)
+    return vol
+
+
+def jacobian_ratio(N,E):
+    edg = local_matrices(N,E)
+    vol = np.linalg.det(edg)
+
+    # setting the negative volumes to zero to allow calculation to procede
+    print((vol<=0).sum())
+    vol[vol<0] = 0
+
+    dia = np.sum(edg**2, axis=(-2,-1))
+    val = 24./np.sum(dia/vol**(2/3), axis=1)
+
+    return val
+
+
 def extrapolate_mesh(nodes, elems, bd_size):
     def bt(a:np.ndarray, lo, hi):
         return np.logical_and(a>=lo, a<hi)
@@ -184,52 +225,144 @@ def extrapolate_mesh(nodes, elems, bd_size):
     return N_, E_
 
 
+class HexahedralMeshFix(PolygonalSurfaceNodeSelector):
+    '''use this class to fix minor hexahedral mesh defects
+        ```
+        sel = HexahedralMeshFix()
+        sel.initialize(r'C:\data\meshes\n0030\test\hexmesh_open_test.inp')
+        sel.start()
+
+        ```
+    '''
+    def initialize(self, inp_file, override=False):
+
+        self.file_path = inp_file
+        self.override = override
+        nodes, elems = read_inp(inp_file)
+        self.nodes, self.elems = nodes, elems 
+        self.node_grid = calculate_grid(nodes, elems)
+
+        self.points = vtkPoints()
+        for node in nodes.tolist():
+            self.points.InsertNextPoint(node)
+
+        faces = boundary_faces(elems, dims=((False, False), (True, True), (False, False)))
+        other_faces = boundary_faces(elems, dims=((True, True), (False, False), (True, True)))
+
+        pick_surf = vtkPolyData()
+        pick_surf.SetPoints(self.points)
+        E = vtkCellArray()
+        for f in faces.tolist():
+            E.InsertNextCell(len(f),f)
+        pick_surf.SetPolys(E)
+
+        show_surf = vtkPolyData()
+        show_surf.SetPoints(self.points)
+        E = vtkCellArray()
+        for f in other_faces.tolist():
+            E.InsertNextCell(len(f),f)
+        show_surf.SetPolys(E)
+
+        self.pick_surf, self.show_surf = pick_surf, show_surf
+
+        return super().initialize(self.pick_surf, self.show_surf)
+
+
+    def _modify(self):
+
+        nodes = vtk_to_numpy(self.points.GetData()) # shares memory with vtk
+        elems = self.elems
+        node_grid = self.node_grid
+
+        ind_node_select = vtk_to_numpy(self.selection).flatten()
+        ind_node_select = ind_node_select.nonzero()[0]
+        ind_node_change_3d = np.all(node_grid[:,None,:] == node_grid[ind_node_select,:][None,:,:], axis=2)
+        d1,d2 = np.nonzero(ind_node_change_3d)
+        ind_node_change = d1[np.argsort(d2)]
+
+        ind_node_faces = np.nonzero(np.logical_or(node_grid[:,1]==node_grid[:,1].min(), node_grid[:,1]==node_grid[:,1].max()))[0]
+        ind_node_change_neighbor = ind_node_change.copy()
+        ind_node_change_neighbor = np.all(node_grid[:,None,(0,2)] == node_grid[ind_node_change,:][None,:,(0,2)], axis=2)
+        ind_node_change_neighbor = np.nonzero(ind_node_change_neighbor.any(axis=1))[0]
+        for _ in range(2):
+            ind_node_change_neighbor = elems[np.isin(elems,ind_node_change_neighbor).any(axis=1),:].flatten()
+
+        ind_node_change_neighbor = np.unique(ind_node_change_neighbor)
+        ind_node_change_neighbor_interp = ind_node_change_neighbor.copy()
+        for _ in range(3):
+            ind_node_change_neighbor_interp = elems[np.isin(elems,ind_node_change_neighbor_interp).any(axis=1),:].flatten()
+
+        ind_node_change_neighbor_interp = np.unique(ind_node_change_neighbor_interp)
+        ind_node_change = np.union1d(ind_node_change, np.setdiff1d(ind_node_change_neighbor, ind_node_faces))
+        ind_node_interp = np.setdiff1d(ind_node_change_neighbor_interp, ind_node_change)
+
+        # nodes are modified here
+        nodes[ind_node_change,:] = RBFInterpolator(node_grid[ind_node_interp,:], nodes[ind_node_interp,:], degree=3)(node_grid[ind_node_change,:])
+
+        self.points.Modified()
+        self._deselect()
+        self.render_window.Render()
+
+        return None
+
+
+    def save(self):
+        if self.override:
+            with open(self.file_path, 'w', newline='') as f:
+                write_inp(f, vtk_to_numpy(self.points.GetData()), self.elems)
+        else:
+            self.save_ui(title='Save landmarks to *.csv ...',
+                         initialdir=os.path.dirname(self.file_path),
+                         initialfile=os.path.basename(self.file_path))
+        
+        return None
 
 
 
 
-def seed_grid(nodes, elems):
-    N, E = nodes, elems
-    ng = np.zeros_like(N)
-    # assumes u,v,w correspond to x,y,z, in both dimension and direction
-    # first, find 8 nodes with single occurence
-    occr = np.bincount(E.flat)
-    n8 = np.where(occr==1)[0]
-    cols = []
-    for n in n8:
-        cols.append(np.mgrid[range(E.shape[0]), range(E.shape[1])][1][np.isin(E,n)][0])
-    n8[cols] = n8
 
-    assert n8.size==8, 'check mesh'
-    # then, set the grid position of these eight nodes
-    # set left and right (-x -> -INF, +x -> +INF)
-    ng[n8,0] = np.where(N[n8,0]<np.median(N[n8,0]), np.NINF, np.PINF)
-    # set up and down (-z -> -INF, +z -> +INF)
-    ng[n8,2] = np.where(N[n8,2]<np.median(N[n8,2]), np.NINF, np.PINF)
-    # set front and back
-    n4 = n8[N[n8,2]<np.median(N[n8,2])] # top 4
-    c = N[n4].mean(axis=0)
-    n2 = n4[N[n4,0]<np.median(N[n4,0])] # top left
-    d = np.sum((N[n2] - c)**2, axis=1)**.5
-    ng[n2,1] = np.where(d<d.mean(), np.NINF, np.PINF)
-    n2 = n4[N[n4,0]>np.median(N[n4,0])] # top right
-    d = np.sum((N[n2] - c)**2, axis=1)**.5
-    ng[n2,1] = np.where(d<d.mean(), np.NINF, np.PINF)
+# def seed_grid(nodes, elems):
+#     N, E = nodes, elems
+#     ng = np.zeros_like(N)
+#     # assumes u,v,w correspond to x,y,z, in both dimension and direction
+#     # first, find 8 nodes with single occurence
+#     occr = np.bincount(E.flat)
+#     n8 = np.where(occr==1)[0]
+#     cols = []
+#     for n in n8:
+#         cols.append(np.mgrid[range(E.shape[0]), range(E.shape[1])][1][np.isin(E,n)][0])
+#     n8[cols] = n8
 
-    n4 = n8[N[n8,2]>np.median(N[n8,2])] # bottom 4
-    c = N[n4].mean(axis=0)
-    n2 = n4[N[n4,0]<np.median(N[n4,0])] # bottom left
-    d = np.sum((N[n2] - c)**2, axis=1)**.5
-    ng[n2,1] = np.where(d<d.mean(), np.NINF, np.PINF)
-    n2 = n4[N[n4,0]>np.median(N[n4,0])] # bottom right
-    d = np.sum((N[n2] - c)**2, axis=1)**.5
-    ng[n2,1] = np.where(d<d.mean(), np.NINF, np.PINF)
+#     assert n8.size==8, 'check mesh'
+#     # then, set the grid position of these eight nodes
+#     # set left and right (-x -> -INF, +x -> +INF)
+#     ng[n8,0] = np.where(N[n8,0]<np.median(N[n8,0]), np.NINF, np.PINF)
+#     # set up and down (-z -> -INF, +z -> +INF)
+#     ng[n8,2] = np.where(N[n8,2]<np.median(N[n8,2]), np.NINF, np.PINF)
+#     # set front and back
+#     n4 = n8[N[n8,2]<np.median(N[n8,2])] # top 4
+#     c = N[n4].mean(axis=0)
+#     n2 = n4[N[n4,0]<np.median(N[n4,0])] # top left
+#     d = np.sum((N[n2] - c)**2, axis=1)**.5
+#     ng[n2,1] = np.where(d<d.mean(), np.NINF, np.PINF)
+#     n2 = n4[N[n4,0]>np.median(N[n4,0])] # top right
+#     d = np.sum((N[n2] - c)**2, axis=1)**.5
+#     ng[n2,1] = np.where(d<d.mean(), np.NINF, np.PINF)
 
-    seed = np.ones((8,3))*.5
-    ind_preset = np.all(np.isinf(ng), axis=1).nonzero()[0]
-    for row,col in zip(*np.where(np.isin(N, ind_preset))):
-        seed[col] *= np.sign(ng[N[row,col]])
-    return seed
+#     n4 = n8[N[n8,2]>np.median(N[n8,2])] # bottom 4
+#     c = N[n4].mean(axis=0)
+#     n2 = n4[N[n4,0]<np.median(N[n4,0])] # bottom left
+#     d = np.sum((N[n2] - c)**2, axis=1)**.5
+#     ng[n2,1] = np.where(d<d.mean(), np.NINF, np.PINF)
+#     n2 = n4[N[n4,0]>np.median(N[n4,0])] # bottom right
+#     d = np.sum((N[n2] - c)**2, axis=1)**.5
+#     ng[n2,1] = np.where(d<d.mean(), np.NINF, np.PINF)
+
+#     seed = np.ones((8,3))*.5
+#     ind_preset = np.all(np.isinf(ng), axis=1).nonzero()[0]
+#     for row,col in zip(*np.where(np.isin(N, ind_preset))):
+#         seed[col] *= np.sign(ng[N[row,col]])
+#     return seed
 
 
 
