@@ -5,6 +5,7 @@ from vtkmodules.vtkCommonColor import vtkNamedColors, vtkColorSeries
 from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData, vtkImageData
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
+    vtkMapper,
     vtkActorCollection,
     vtkTextActor,    
     vtkProperty,
@@ -20,7 +21,7 @@ from vtkmodules.vtkRenderingCore import (
 )
 from vtkmodules.vtkFiltersCore import vtkFeatureEdges, vtkExtractEdges, vtkIdFilter
 from vtkmodules.vtkFiltersGeneral import vtkCurvatures
-from vtkmodules.vtkCommonCore import vtkDataArray, vtkScalarsToColors, vtkCharArray
+from vtkmodules.vtkCommonCore import vtkDataArray, vtkScalarsToColors, vtkCharArray, vtkLookupTable
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera, vtkInteractorStyleTrackballActor, vtkInteractorStyleImage
 from vtkmodules.vtkRenderingCore import vtkProp, vtkInteractorStyle, vtkBillboardTextActor3D
 from vtk_bridge import *
@@ -28,6 +29,7 @@ from .polydata import *
 from register import nicp # cannot run without this, don't know why
 from vtkmodules.util import numpy_support
 from vtkmodules.numpy_interface import dataset_adapter as dsa
+
 
 colornames = ['IndianRed', 'LightSalmon', 'Pink', 'Gold', 'Lavender', 'GreenYellow', 'Aqua', 'Cornsilk', 'White', 'Gainsboro',
               'LightCoral', 'Coral', 'LightPink', 'Yellow', 'Thistle', 'Chartreuse', 'Cyan', 'BlanchedAlmond', 'Snow', 'LightGrey',
@@ -37,39 +39,54 @@ colornames = ['IndianRed', 'LightSalmon', 'Pink', 'Gold', 'Lavender', 'GreenYell
               'Red', 'Orange', 'PaleVioletRed', 'PapayaWhip', 'Fuchsia', 'PaleGreen', 'Turquoise', 'BurlyWood', 'AliceBlue', 'DimGray', 'Crimson']
 
 colors = vtkNamedColors()
+color_series = vtkColorSeries()
 
-def build_color(lower_bound, upper_bound, symmetric_map=False) -> vtkColorTransferFunction:
-    lut = vtkColorTransferFunction()
-    r = [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.5]
-    g = [0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0]
-    b = [0.5, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]
-    rgb = numpy.vstack((r,g,b)).T.astype(numpy.float64)
-    if symmetric_map:
-        rgb = numpy.vstack((rgb[:0:-1,:], rgb))
-    lut.BuildFunctionFromTable(lower_bound, upper_bound, rgb.shape[0], rgb.ravel())
-    lut.Modified()
-    return lut
+# https://htmlpreview.github.io/?https://github.com/Kitware/vtk-examples/blob/gh-pages/VTKColorSeriesPatches.html
 
 
-def build_color_series(lower_bound:float, upper_bound:float, color_map_idx=16, lut:vtkScalarsToColors=None):
-    color_series = vtkColorSeries()
-    color_series.SetColorScheme(color_map_idx)
-    # print(f'Using color scheme #: {color_series.GetColorScheme()}, {color_series.GetColorSchemeName()}')
+def build_colors(lower_bound, upper_bound, color_scheme_idx:int=15, colors_rgb:np.ndarray=None):
 
-    if lut is None:
-        lut = vtkColorTransferFunction()
-        lut.SetColorSpaceToHSV()
-    else:
-        lut.RemoveAllPoints()
+    if color_scheme_idx is not None:
+        color_series = vtkColorSeries()
+        color_series.SetColorScheme(color_scheme_idx)
+        lookup_table = color_series.CreateLookupTable()
 
-    # Use a color series to create a transfer function
-    for i in range(0, color_series.GetNumberOfColors()):
-        color = color_series.GetColor(i)
-        double_color = list(map(lambda x: x / 255.0, color))
-        t = lower_bound + (upper_bound - lower_bound) / (color_series.GetNumberOfColors() - 1) * i
-        lut.AddRGBPoint(t, double_color[0], double_color[1], double_color[2])
+    elif colors_rgb is not None:
+        lookup_table = vtkLookupTable()
+        for i, (r,g,b) in enumerate(colors_rgb):
+            lookup_table.SetTableValue(i,r,g,b)
 
-    return lut
+    lookup_table.SetTableRange(lower_bound, upper_bound)
+    lookup_table.Modified()
+    lookup_table.Build()
+
+    return lookup_table
+
+
+def update_colors(lookup_table:vtkLookupTable, color_scheme_idx:int=None, colors_rgb:np.ndarray=None, lower_bound:float=None, upper_bound:float=None):
+
+    if color_scheme_idx is not None:
+        lookup_table.ResetAnnotations()
+        color_series = vtkColorSeries()
+        color_series.SetColorScheme(color_scheme_idx)
+        color_series.BuildLookupTable(lookup_table)
+
+    elif colors_rgb is not None:
+        lookup_table.ResetAnnotations()
+        for i, (r,g,b) in enumerate(colors_rgb):
+            lookup_table.SetTableValue(i,r,g,b)
+    
+    if lower_bound is None:
+        lower_bound = lookup_table.GetTableRange()[0]
+    
+    if upper_bound is None:
+        upper_bound = lookup_table.GetTableRange()[1]
+
+    lookup_table.SetTableRange(lower_bound, upper_bound)
+    lookup_table.Modified()
+    lookup_table.Build()
+
+    return None
 
 
 def map_scalars_through_table(lut:vtkScalarsToColors, scalars:Union[numpy.ndarray, vtkDataArray]) -> numpy.ndarray:
@@ -87,22 +104,22 @@ def map_scalars_through_table(lut:vtkScalarsToColors, scalars:Union[numpy.ndarra
     return rgba
 
 
-def render_window(window_title=''):
-    renderer = vtkRenderer()
-    renderer.SetBackground(.67, .93, .93)
+# def render_window(window_title=''):
+#     renderer = vtkRenderer()
+#     renderer.SetBackground(.67, .93, .93)
 
-    render_window = vtkRenderWindow()
-    render_window.AddRenderer(renderer)
-    render_window.SetSize(1000,1500)
-    render_window.SetWindowName(window_title)
+#     render_window = vtkRenderWindow()
+#     render_window.AddRenderer(renderer)
+#     render_window.SetSize(1000,1500)
+#     render_window.SetWindowName(window_title)
 
-    interactor = vtkRenderWindowInteractor()
-    interactor.SetRenderWindow(render_window)
+#     interactor = vtkRenderWindowInteractor()
+#     interactor.SetRenderWindow(render_window)
 
-    style = vtkInteractorStyleTrackballCamera()
-    style.SetDefaultRenderer(renderer)
-    interactor.SetInteractorStyle(style)
-    return interactor, renderer
+#     style = vtkInteractorStyleTrackballCamera()
+#     style.SetDefaultRenderer(renderer)
+#     interactor.SetInteractorStyle(style)
+#     return interactor, renderer
 
 
 def set_curvatures(polyd, curvature_name):
@@ -222,11 +239,8 @@ def set_curvatures(polyd, curvature_name):
 
         return curv
     
-    polyd_in = vtkPolyData()
-    polyd_in.SetPoints(polyd.GetPoints())
-    polyd_in.SetPolys(polyd.GetPolys())
     cc = vtkCurvatures()
-    cc.SetInputData(polyd_in)
+    cc.SetInputData(polyd)
     if curvature_name == 'Mean_Curvature':
         cc.SetCurvatureTypeToMean()
     elif curvature_name == 'Gauss_Curvature':
@@ -239,7 +253,7 @@ def set_curvatures(polyd, curvature_name):
 
     if polyd.GetPointData().HasArray(curvature_name):
         polyd.GetPointData().RemoveArray(curvature_name)
-    polyd.GetPointData().SetScalars(curv)
+    polyd.GetPointData().AddArray(curv)
     polyd.GetPointData().SetActiveScalars(curvature_name)
     return None
 
@@ -287,113 +301,4 @@ def text_actor(coords:numpy.ndarray, label:str, font_size=24, color=(0,0,0), dis
     if text_property:
         for pk,pv in text_property.items():
             getattr(actor.GetTextProperty(),'Set'+pk).__call__(pv)
-
-
-class Window():
-
-    DEFAULT_STYLE_CLASS = vtkInteractorStyleTrackballCamera
-
-    def __init__(self):
-
-        self.renderer = vtkRenderer()
-        self.renderer.SetBackground(.67, .93, .93)
-
-        self.render_window = vtkRenderWindow()
-        self.render_window.AddRenderer(self.renderer)
-        self.render_window.SetSize(1000,1500)
-        self.render_window.SetWindowName('')
-
-        self.interactor = vtkRenderWindowInteractor()
-        self.interactor.SetRenderWindow(self.render_window)
-
-        self.attach_style()
-        return None
-
-
-    def attach_style(self, style=None):
-        if style is None:
-            self.style = self.DEFAULT_STYLE_CLASS()
-            # Interactor callbacks
-            self.style.AddObserver('LeftButtonPressEvent', self.left_button_press_event)
-            self.style.AddObserver('LeftButtonReleaseEvent', self.left_button_release_event)
-            self.style.AddObserver('RightButtonPressEvent', self.right_button_press_event)
-            self.style.AddObserver('RightButtonReleaseEvent', self.right_button_release_event)
-            self.style.AddObserver('MouseMoveEvent', self.mouse_move_event)
-            self.style.AddObserver('KeyPressEvent', self.key_press_event)
-        else:
-            self.style = style
-
-        self.button_status = dict(left=0, right=0)
-        self.style.SetDefaultRenderer(self.renderer)
-        self.interactor.SetInteractorStyle(self.style)
-        return None
-
-
-    def start(self):
-        self.interactor.Initialize()
-        self.render_window.Render()
-        self.interactor.Start()
-        return None
-
-
-    def quit(self):
-        self.render_window.Finalize()
-        self.interactor.TerminateApp()
-        del self.render_window, self.interactor
-
-
-    def refresh(self, text=None):
-        self.render_window.Render()
-
-
-    def resolve_key(self, key):
-        # print(key)
-        if key=='space':
-            print('\n', end='')
-            self.space_action()
-        self.render_window.Render()
-
-
-    def space_action(self):
-        pass
-
-
-    def ctrl_left_action(self, obj:vtkInteractorStyle, event):
-        # this is to be overridden by subclass
-        # should be unique for each class
-        pass
-        
-
-    # Interactor callbacks
-    def key_press_event(self, obj:vtkInteractorStyle, event):
-        return self.resolve_key(obj.GetInteractor().GetKeySym())
-
-    def left_button_press_event(self, obj:vtkInteractorStyle, event):
-        self.button_status['left'] = 1
-        if obj.GetInteractor().GetControlKey():
-            return self.ctrl_left_action(obj, event)
-        else:
-            return obj.OnLeftButtonDown()
-
-    def left_button_release_event(self, obj:vtkInteractorStyle, event):
-        self.button_status['left'] = 0
-        if obj.GetInteractor().GetControlKey():
-            return self.ctrl_left_action(obj, event)
-        else:
-            return obj.OnLeftButtonUp()
-
-    def right_button_press_event(self, obj:vtkInteractorStyle, event):
-        self.button_status['right'] = 1
-        return obj.OnRightButtonDown()
-
-    def right_button_release_event(self, obj:vtkInteractorStyle, event):
-        self.button_status['right'] = 0
-        return obj.OnRightButtonUp()
-
-    def mouse_move_event(self, obj:vtkInteractorStyle, event):
-        if self.button_status['left'] and obj.GetInteractor().GetControlKey():
-            return self.ctrl_left_action(obj, event)
-        else:
-            return obj.OnMouseMove()
-
 
