@@ -4,5 +4,5 @@ from .mesh import *
 from .polydata import *
 from .remote import *
 from .rendering import *
-from .select import *
+from .ui import *
 from vtk import *

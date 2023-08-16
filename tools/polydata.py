@@ -4,6 +4,7 @@ import numpy as np
 from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkCommonMath import vtkMatrix4x4
 from vtkmodules.vtkCommonCore import vtkPoints, vtkIdList
+from vtkmodules.vtkInteractionWidgets import vtkImplicitPlaneRepresentation
 
 from vtkmodules.vtkCommonTransforms import (
     vtkMatrixToLinearTransform,
@@ -30,7 +31,8 @@ from vtkmodules.vtkFiltersCore import (
     vtkMaskFields,
     vtkThreshold,
     vtkWindowedSincPolyDataFilter,
-    vtkCleanPolyData
+    vtkCleanPolyData,
+    vtkExtractEdges
 )
 from vtkmodules.vtkFiltersGeneral import (
     vtkTransformPolyDataFilter,
@@ -109,6 +111,57 @@ def polydata_from_points(pts:vtkPoints, sphere_radius=1.0, return_glyph=False):
     if return_glyph:
         return glyph3D.GetOutput(), glyph3D
     return glyph3D.GetOutput()
+
+
+def polydata_from_numpy(nodes, polys, lines=True, verts=False):
+
+    # shape for the input variables
+    # nodes (_,3)
+    # polys (_,x)
+    # lines (_,2)
+    # nodes (_,1) or (_,)
+
+    N = vtkPoints()
+    for node in nodes.tolist():
+        N.InsertNextPoint(node)
+    E = vtkCellArray()
+    for f in polys.tolist():
+        E.InsertNextCell(len(f),f)
+    N.Modified()
+    E.Modified()
+    polyd = vtkPolyData()
+    polyd.SetPoints(N)
+    polyd.SetPolys(E)
+
+    if lines == True:
+        edg = vtkExtractEdges()
+        edg.UseAllPointsOn()
+        edg.SetInputData(polyd)
+        edg.Update()
+        L = edg.GetOutput().GetLines()
+
+    else:
+        L = vtkCellArray()
+        if isinstance(lines, np.ndarray):
+            for l in lines.tolist():
+                L.InsertNextCell(len(l), l)
+
+    polyd.SetLines(L)
+
+    V = vtkCellArray()
+    if verts == True:
+        verts = np.arange(nodes.shape[0])
+
+    if isinstance(verts, np.ndarray):
+        if verts.ndim == 1:
+            verts = verts[...,None]
+        for v in verts.tolist():
+            V.InsertNextCell(len(v), v)
+
+    polyd.SetVerts(V)
+
+    return polyd
+
 
 
 
