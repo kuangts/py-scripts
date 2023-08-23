@@ -23,8 +23,8 @@ IND_keep = IND_keep & ~IND_find
 
 N[G3D[IND_find],:] = RBFInterpolator(IND[:,IND_keep].T, N[G3D[IND_keep]])(IND[:,IND_find].T)
 
-with open(r'C:\data\meshes\n0046\test\hexmesh_open_fix_n46.inp', 'w') as f:
-    write_inp(f, N, E)
+# with open(r'C:\data\meshes\n0046\test\hexmesh_open_fix_n46.inp', 'w') as f:
+#     write_inp(f, N, E)
 
 N,E = read_inp(r'C:\data\meshes\n0046\test\hexmesh_open_fix_n46.inp')
 
@@ -33,21 +33,15 @@ w = Window()
 F = boundary_faces(E[elem_id])
 polyd = polydata_from_numpy(N,F)
 polyd = clean_polydata(polyd)
-actor = polydata_actor(polyd, Color=[.8,.2,.2])
-w.renderer.AddActor(actor)
+actor = w.add_polydata(polyd)
+actor.GetProperty().SetColor(.8,.2,.2)
 
 F = boundary_faces(np.delete(E, elem_id, axis=0))
 polyd = polydata_from_numpy(N,F, lines=True)
 polyd = clean_polydata(polyd)
-actor = polydata_actor(polyd, Color=[.8,.6,.6], Opacity=.2)
-w.renderer.AddActor(actor)
+actor = w.add_polydata(polyd)
+actor.GetProperty().SetColor(.8,.6,.6)
 
-w.render_window.Render()
-exporter = vtkVRMLExporter()
-exporter.SetInput(w.render_window)
-exporter.SetFileName(r'C:\data\meshes\n0046\test\hexmesh_open_fix.wrl')
-exporter.Update()
-exporter.Write()
 
 w.start()
 

@@ -10,7 +10,7 @@ if __name__ == '__main__':
     sel = PolygonalSurfaceNodeSelector()
     stl_pick = polydata_from_stl(r'C:\data\clipped_with_mesh\n0034\mesh_surf.stl')
     stl_show = polydata_from_stl(r'C:\data\clipped_with_mesh\n0034\clipper_large.stl')
-    sel.initialize(stl_pick, stl_show)
+    sel.initialize(stl_pick)
     sel.start()
 
 

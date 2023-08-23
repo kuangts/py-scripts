@@ -257,16 +257,6 @@ def set_curvatures(polyd, curvature_name):
     polyd.GetPointData().SetActiveScalars(curvature_name)
     return None
 
-
-def add_edges(polyd):
-    # add edges to polydata
-    edg = vtkExtractEdges()
-    edg.UseAllPointsOn()
-    edg.SetInputData(polyd)
-    edg.Update()
-    polyd.SetLines(edg.GetOutput().GetLines())
-
-
 def polydata_actor(polyd:vtkPolyData, mapper=None, **property):
     if mapper is None:
         mapper = vtkPolyDataMapper()

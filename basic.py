@@ -2,7 +2,7 @@ import numpy as np
 import open3d as o3d
 import pyvista
 from time import perf_counter as toc
-__ALL__ = ["Transform","Plane","Pointset","Poly"]
+__ALL__ = ["Transform", "Plane", "Pointset", "Poly"]
 
 
 class Transform(np.ndarray):

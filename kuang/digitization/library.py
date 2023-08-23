@@ -117,6 +117,7 @@ class Library(frozenset):
             
         return obj
 
+
     def __copy__(self):
         return self
 

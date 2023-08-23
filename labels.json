@@ -58,5 +58,11 @@
         "Prn--PostOp", "AL-R--PostOp", "AL-L--PostOp", "Ac-R--PostOp", "Ac-L--PostOp", "Zy'-R--PostOp", "Zy'-L--PostOp", "CM--PostOp", "Nt-R--PostOp", "Nt-L--PostOp",
         "Nb-R--PostOp", "Nb-L--PostOp", "Sn--PostOp", "A'--PostOp", "Ss--PostOp", "Ls--PostOp", "Cph-R--PostOp", "Cph-L--PostOp", "Stm-U--PostOp", "Stm-L--PostOp",
         "Ch-R--PostOp", "Ch-L--PostOp", "Li--PostOp", "Sl--PostOp", "B'--PostOp", "Pog'--PostOp", "Gn'--PostOp", "Me'--PostOp", "C--PostOp", "Go'-R--PostOp", "Go'-L--PostOp"
+        ],
+    "soft_tissue_labels_23": [
+        "Gb'", "Ls", "Sl", "En-R", "Stm-L", "Zy'-L", "Stm-U", "Go'-L", "Ex-R", "Sn",
+        "Prn", "Pog'", "Ex-L", "Go'-R", "En-L", "Li", "CM", "N'", "Ch-R", "Me'",
+        "C", "Zy'-R", "Ch-L"
         ]
+    
     }

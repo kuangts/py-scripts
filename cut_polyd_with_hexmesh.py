@@ -3,7 +3,10 @@ import numpy as np
 import scipy
 from scipy.interpolate import RBFInterpolator
 from scipy.ndimage import *
-from tools import *
+from tools.image import *
+from tools.polydata import *
+from tools.ui import *
+from tools.mesh import *
 import vtk
 from vtk_bridge import *
 from vtkmodules.vtkFiltersGeneral import vtkClipDataSet
@@ -33,7 +36,7 @@ def clip_polydata_with_mesh(image_polydata, mesh_polydata):
 
 
 
-def task_06222023(ncase, should_display=False):
+def task_06222023(ncase):
     
     os.makedirs(rf'C:\Users\tmhtxk25\Box\clipped_with_mesh\{ncase}', exist_ok=True)
     nifti_pre = glob.glob(rf'C:\data\pre-post-paired-40-send-1122\{ncase}\*-pre.nii.gz')[0]
@@ -96,13 +99,12 @@ def task_06222023(ncase, should_display=False):
     write_polydata_to_stl(polyd_clipped, output('pre_skin_mesh_ct.stl'))
 
     # display
-    if should_display:
-        interactor, renderer = render_window('')
-        renderWindow = interactor.GetRenderWindow()
-        renderer.AddActor(polydata_actor(clipper_large, Color='IndianRed', Opacity=.5))
-        renderer.AddActor(polydata_actor(clipper_small, Color='Aqua', Opacity=.5))
-        renderWindow.Render()
-        interactor.Start()
+    w = Window()
+    actor = w.add_polydata(clipper_large)
+    actor.GetProperty().SetColor(vtkNamedColors().GetColor3d('IndianRed'))
+    actor = w.add_polydata(clipper_small)
+    actor.GetProperty().SetColor(vtkNamedColors().GetColor3d('Aqua'))
+    w.start()
 
 
 

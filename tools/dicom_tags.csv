@@ -1,0 +1,542 @@
+0008,0001,Length to End,UL
+0008,0005,Specific Character Set,CS
+0008,0006,Language Code Sequence,SQ
+0008,0008,Image Type,CS
+0008,0010,Recognition Code,SH
+0008,0012,Instance Creation Date,DA
+0008,0013,Instance Creation Time,TM
+0008,0014,Instance Creator UID,UI
+0008,0015,Instance Coercion DateTime,DT
+0008,0016,SOP Class UID,UI
+0008,0017,Acquisition UID,UI
+0008,0018,SOP Instance UID,UI
+0008,0019,Pyramid UID,UI
+0008,001a,Related General SOP Class UID,UI
+0008,001b,Original Specialized SOP Class UID,UI
+0008,0020,Study Date,DA
+0008,0021,Series Date,DA
+0008,0022,Acquisition Date,DA
+0008,0023,Content Date,DA
+0008,0024,Overlay Date,DA
+0008,0025,Curve Date,DA
+0008,002a,Acquisition DateTime,DT
+0008,0030,Study Time,TM
+0008,0031,Series Time,TM
+0008,0032,Acquisition Time,TM
+0008,0033,Content Time,TM
+0008,0034,Overlay Time,TM
+0008,0035,Curve Time,TM
+0008,0040,Data Set Type,US
+0008,0041,Data Set Subtype,LO
+0008,0042,Nuclear Medicine Series Type,CS
+0008,0050,Accession Number,SH
+0008,0051,Issuer of Accession Number Sequence,SQ
+0008,0052,Query/Retrieve Level,CS
+0008,0053,Query/Retrieve View,CS
+0008,0054,Retrieve AE Title,AE
+0008,0055,Station AE Title,AE
+0008,0056,Instance Availability,CS
+0008,0058,Failed SOP Instance UID List,UI
+0008,0060,Modality,CS
+0008,0061,Modalities in Study,CS
+0008,0062,SOP Classes in Study,UI
+0008,0063,Anatomic Regions in Study Code Sequence,SQ
+0008,0064,Conversion Type,CS
+0008,0068,Presentation Intent Type,CS
+0008,0070,Manufacturer,LO
+0008,0080,Institution Name,LO
+0008,0081,Institution Address,ST
+0008,0082,Institution Code Sequence,SQ
+0008,0090,Referring Physician's Name,PN
+0008,0092,Referring Physician's Address,ST
+0008,0094,Referring Physician's Telephone Numbers,SH
+0008,0096,Referring Physician Identification Sequence,SQ
+0008,009c,Consulting Physician's Name,PN
+0008,009d,Consulting Physician Identification Sequence,SQ
+0008,0100,Code Value,SH
+0008,0101,Extended Code Value,LO
+0008,0102,Coding Scheme Designator,SH
+0008,0103,Coding Scheme Version,SH
+0008,0104,Code Meaning,LO
+0008,0105,Mapping Resource,CS
+0008,0106,Context Group Version,DT
+0008,0107,Context Group Local Version,DT
+0008,0108,Extended Code Meaning,LT
+0008,0109,Coding Scheme Resources Sequence,SQ
+0008,010a,Coding Scheme URL Type,CS
+0008,010b,Context Group Extension Flag,CS
+0008,010c,Coding Scheme UID,UI
+0008,010d,Context Group Extension Creator UID,UI
+0008,010e,Coding Scheme URL,UR
+0008,010f,Context Identifier,CS
+0008,0110,Coding Scheme Identification Sequence,SQ
+0008,0112,Coding Scheme Registry,LO
+0008,0114,Coding Scheme External ID,ST
+0008,0115,Coding Scheme Name,ST
+0008,0116,Coding Scheme Responsible Organization,ST
+0008,0117,Context UID,UI
+0008,0118,Mapping Resource UID,UI
+0008,0119,Long Code Value,UC
+0008,0120,URN Code Value,UR
+0008,0121,Equivalent Code Sequence,SQ
+0008,0122,Mapping Resource Name,LO
+0008,0123,Context Group Identification Sequence,SQ
+0008,0124,Mapping Resource Identification Sequence,SQ
+0008,0201,Timezone Offset From UTC,SH
+0008,0202,None,None
+0008,0220,Responsible Group Code Sequence,SQ
+0008,0221,Equipment Modality,CS
+0008,0222,Manufacturer's Related Model Group,LO
+0008,0300,Private Data Element Characteristics Sequence,SQ
+0008,0301,Private Group Reference,US
+0008,0302,Private Creator Reference,LO
+0008,0303,Block Identifying Information Status,CS
+0008,0304,Nonidentifying Private Elements,US
+0008,0306,Identifying Private Elements,US
+0008,0305,Deidentification Action Sequence,SQ
+0008,0307,Deidentification Action,CS
+0008,0308,Private Data Element,US
+0008,0309,Private Data Element Value Multiplicity,UL
+0008,030a,Private Data Element Value Representation,CS
+0008,030b,Private Data Element Number of Items,UL
+0008,030c,Private Data Element Name,UC
+0008,030d,Private Data Element Keyword,UC
+0008,030e,Private Data Element Description,UT
+0008,030f,Private Data Element Encoding,UT
+0008,0310,Private Data Element Definition Sequence,SQ
+0008,1000,Network ID,AE
+0008,1010,Station Name,SH
+0008,1030,Study Description,LO
+0008,1032,Procedure Code Sequence,SQ
+0008,103e,Series Description,LO
+0008,103f,Series Description Code Sequence,SQ
+0008,1040,Institutional Department Name,LO
+0008,1041,Institutional Department Type Code Sequence,SQ
+0008,1048,Physician(s) of Record,PN
+0008,1049,Physician(s) of Record Identification Sequence,SQ
+0008,1050,Performing Physician's Name,PN
+0008,1052,Performing Physician Identification Sequence,SQ
+0008,1060,Name of Physician(s) Reading Study,PN
+0008,1062,Physician(s) Reading Study Identification Sequence,SQ
+0008,1070,Operators' Name,PN
+0008,1072,Operator Identification Sequence,SQ
+0008,1080,Admitting Diagnoses Description,LO
+0008,1084,Admitting Diagnoses Code Sequence,SQ
+0008,1088,Pyramid Description,LO
+0008,1090,Manufacturer's Model Name,LO
+0008,1100,Referenced Results Sequence,SQ
+0008,1110,Referenced Study Sequence,SQ
+0008,1111,Referenced Performed Procedure Step Sequence,SQ
+0008,1115,Referenced Series Sequence,SQ
+0008,1120,Referenced Patient Sequence,SQ
+0008,1125,Referenced Visit Sequence,SQ
+0008,1130,Referenced Overlay Sequence,SQ
+0008,1134,Referenced Stereometric Instance Sequence,SQ
+0008,113a,Referenced Waveform Sequence,SQ
+0008,1140,Referenced Image Sequence,SQ
+0008,1145,Referenced Curve Sequence,SQ
+0008,114a,Referenced Instance Sequence,SQ
+0008,114b,Referenced Real World Value Mapping Instance Sequence,SQ
+0008,1150,Referenced SOP Class UID,UI
+0008,1155,Referenced SOP Instance UID,UI
+0008,1156,Definition Source Sequence,SQ
+0008,115a,SOP Classes Supported,UI
+0008,1160,Referenced Frame Number,IS
+0008,1161,Simple Frame List,UL
+0008,1162,Calculated Frame List,UL
+0008,1163,Time Range,FD
+0008,1164,Frame Extraction Sequence,SQ
+0008,1167,Multi-frame Source SOP Instance UID,UI
+0008,1190,Retrieve URL,UR
+0008,1195,Transaction UID,UI
+0008,1196,Warning Reason,US
+0008,1197,Failure Reason,US
+0008,1198,Failed SOP Sequence,SQ
+0008,1199,Referenced SOP Sequence,SQ
+0008,119a,Other Failures Sequence,SQ
+0008,1200,Studies Containing Other Referenced Instances Sequence,SQ
+0008,1250,Related Series Sequence,SQ
+0008,2110,Lossy Image Compression (Retired),CS
+0008,2111,Derivation Description,ST
+0008,2112,Source Image Sequence,SQ
+0008,2120,Stage Name,SH
+0008,2122,Stage Number,IS
+0008,2124,Number of Stages,IS
+0008,2127,View Name,SH
+0008,2128,View Number,IS
+0008,2129,Number of Event Timers,IS
+0008,212a,Number of Views in Stage,IS
+0008,2130,Event Elapsed Time(s),DS
+0008,2132,Event Timer Name(s),LO
+0008,2133,Event Timer Sequence,SQ
+0008,2134,Event Time Offset,FD
+0008,2135,Event Code Sequence,SQ
+0008,2142,Start Trim,IS
+0008,2143,Stop Trim,IS
+0008,2144,Recommended Display Frame Rate,IS
+0008,2200,Transducer Position,CS
+0008,2204,Transducer Orientation,CS
+0008,2208,Anatomic Structure,CS
+0008,2218,Anatomic Region Sequence,SQ
+0008,2220,Anatomic Region Modifier Sequence,SQ
+0008,2228,Primary Anatomic Structure Sequence,SQ
+0008,2229,"Anatomic Structure, Space or Region Sequence",SQ
+0008,2230,Primary Anatomic Structure Modifier Sequence,SQ
+0008,2240,Transducer Position Sequence,SQ
+0008,2242,Transducer Position Modifier Sequence,SQ
+0008,2244,Transducer Orientation Sequence,SQ
+0008,2246,Transducer Orientation Modifier Sequence,SQ
+0008,2251,Anatomic Structure Space Or Region Code Sequence (Trial),SQ
+0008,2253,Anatomic Portal Of Entrance Code Sequence (Trial),SQ
+0008,2255,Anatomic Approach Direction Code Sequence (Trial),SQ
+0008,2256,Anatomic Perspective Description (Trial),ST
+0008,2257,Anatomic Perspective Code Sequence (Trial),SQ
+0008,2258,Anatomic Location Of Examining Instrument Description (Trial),ST
+0008,2259,Anatomic Location Of Examining Instrument Code Sequence (Trial),SQ
+0008,225a,Anatomic Structure Space Or Region Modifier Code Sequence (Trial),SQ
+0008,225c,On Axis Background Anatomic Structure Code Sequence (Trial),SQ
+0008,3001,Alternate Representation Sequence,SQ
+0008,3002,Available Transfer Syntax UID,UI
+0008,3010,Irradiation Event UID,UI
+0008,3011,Source Irradiation Event Sequence,SQ
+0008,3012,Radiopharmaceutical Administration Event UID,UI
+0008,4000,Identifying Comments,LT
+0008,9007,Frame Type,CS
+0008,9092,Referenced Image Evidence Sequence,SQ
+0008,9121,Referenced Raw Data Sequence,SQ
+0008,9123,Creator-Version UID,UI
+0008,9124,Derivation Image Sequence,SQ
+0008,9154,Source Image Evidence Sequence,SQ
+0008,9205,Pixel Presentation,CS
+0008,9206,Volumetric Properties,CS
+0008,9207,Volume Based Calculation Technique,CS
+0008,9208,Complex Image Component,CS
+0008,9209,Acquisition Contrast,CS
+0008,9215,Derivation Code Sequence,SQ
+0008,9237,Referenced Presentation State Sequence,SQ
+0008,9410,Referenced Other Plane Sequence,SQ
+0008,9458,Frame Display Sequence,SQ
+0008,9459,Recommended Display Frame Rate in Float,FL
+0008,9460,Skip Frame Range Flag,CS
+0010,0010,Patient's Name,PN
+0010,0020,Patient ID,LO
+0010,0021,Issuer of Patient ID,LO
+0010,0022,Type of Patient ID,CS
+0010,0024,Issuer of Patient ID Qualifiers Sequence,SQ
+0010,0026,Source Patient Group Identification Sequence,SQ
+0010,0027,Group of Patients Identification Sequence,SQ
+0010,0028,Subject Relative Position in Image,US
+0010,0030,Patient's Birth Date,DA
+0010,0032,Patient's Birth Time,TM
+0010,0033,Patient's Birth Date in Alternative Calendar,LO
+0010,0034,Patient's Death Date in Alternative Calendar,LO
+0010,0035,Patient's Alternative Calendar,CS
+0010,0040,Patient's Sex,CS
+0010,0050,Patient's Insurance Plan Code Sequence,SQ
+0010,0101,Patient's Primary Language Code Sequence,SQ
+0010,0102,Patient's Primary Language Modifier Code Sequence,SQ
+0010,0200,Quality Control Subject,CS
+0010,0201,Quality Control Subject Type Code Sequence,SQ
+0010,0212,Strain Description,UC
+0010,0213,Strain Nomenclature,LO
+0010,0214,Strain Stock Number,LO
+0010,0215,Strain Source Registry Code Sequence,SQ
+0010,0216,Strain Stock Sequence,SQ
+0010,0217,Strain Source,LO
+0010,0218,Strain Additional Information,UT
+0010,0219,Strain Code Sequence,SQ
+0010,0221,Genetic Modifications Sequence,SQ
+0010,0222,Genetic Modifications Description,UC
+0010,0223,Genetic Modifications Nomenclature,LO
+0010,0229,Genetic Modifications Code Sequence,SQ
+0010,1000,Other Patient IDs,LO
+0010,1001,Other Patient Names,PN
+0010,1002,Other Patient IDs Sequence,SQ
+0010,1005,Patient's Birth Name,PN
+0010,1010,Patient's Age,AS
+0010,1020,Patient's Size,DS
+0010,1021,Patient's Size Code Sequence,SQ
+0010,1022,Patient's Body Mass Index,DS
+0010,1023,Measured AP Dimension,DS
+0010,1024,Measured Lateral Dimension,DS
+0010,1030,Patient's Weight,DS
+0010,1040,Patient's Address,LO
+0010,1050,Insurance Plan Identification,LO
+0010,1060,Patient's Mother's Birth Name,PN
+0010,1080,Military Rank,LO
+0010,1081,Branch of Service,LO
+0010,1090,Medical Record Locator,LO
+0010,1100,Referenced Patient Photo Sequence,SQ
+0010,2000,Medical Alerts,LO
+0010,2110,Allergies,LO
+0010,2150,Country of Residence,LO
+0010,2152,Region of Residence,LO
+0010,2154,Patient's Telephone Numbers,SH
+0010,2155,Patient's Telecom Information,LT
+0010,2160,Ethnic Group,SH
+0010,2180,Occupation,SH
+0010,21a0,Smoking Status,CS
+0010,21b0,Additional Patient History,LT
+0010,21c0,Pregnancy Status,US
+0010,21d0,Last Menstrual Date,DA
+0010,21f0,Patient's Religious Preference,LO
+0010,2201,Patient Species Description,LO
+0010,2202,Patient Species Code Sequence,SQ
+0010,2203,Patient's Sex Neutered,CS
+0010,2210,Anatomical Orientation Type,CS
+0010,2292,Patient Breed Description,LO
+0010,2293,Patient Breed Code Sequence,SQ
+0010,2294,Breed Registration Sequence,SQ
+0010,2295,Breed Registration Number,LO
+0010,2296,Breed Registry Code Sequence,SQ
+0010,2297,Responsible Person,PN
+0010,2298,Responsible Person Role,CS
+0010,2299,Responsible Organization,LO
+0010,4000,Patient Comments,LT
+0010,9431,Examined Body Thickness,FL
+0012,0010,Clinical Trial Sponsor Name,LO
+0012,0020,Clinical Trial Protocol ID,LO
+0012,0021,Clinical Trial Protocol Name,LO
+0012,0030,Clinical Trial Site ID,LO
+0012,0031,Clinical Trial Site Name,LO
+0012,0040,Clinical Trial Subject ID,LO
+0012,0042,Clinical Trial Subject Reading ID,LO
+0012,0050,Clinical Trial Time Point ID,LO
+0012,0051,Clinical Trial Time Point Description,ST
+0012,0052,Longitudinal Temporal Offset from Event,FD
+0012,0053,Longitudinal Temporal Event Type,CS
+0012,0060,Clinical Trial Coordinating Center Name,LO
+0012,0062,Patient Identity Removed,CS
+0012,0063,De-identification Method,LO
+0012,0064,De-identification Method Code Sequence,SQ
+0012,0071,Clinical Trial Series ID,LO
+0012,0072,Clinical Trial Series Description,LO
+0012,0081,Clinical Trial Protocol Ethics Committee Name,LO
+0012,0082,Clinical Trial Protocol Ethics Committee Approval Number,LO
+0012,0083,Consent for Clinical Trial Use Sequence,SQ
+0012,0084,Distribution Type,CS
+0012,0085,Consent for Distribution Flag,CS
+0012,0086,Ethics Committee Approval Effectiveness Start Date,DA
+0012,0087,Ethics Committee Approval Effectiveness End Date,DA
+0014,0023,CAD File Format,ST
+0014,0024,Component Reference System,ST
+0014,0025,Component Manufacturing Procedure,ST
+0014,0028,Component Manufacturer,ST
+0014,0030,Material Thickness,DS
+0014,0032,Material Pipe Diameter,DS
+0014,0034,Material Isolation Diameter,DS
+0014,0042,Material Grade,ST
+0014,0044,Material Properties Description,ST
+0014,0045,Material Properties File Format (Retired),ST
+0014,0046,Material Notes,LT
+0014,0050,Component Shape,CS
+0014,0052,Curvature Type,CS
+0014,0054,Outer Diameter,DS
+0014,0056,Inner Diameter,DS
+0014,0100,Component Welder IDs,LO
+0014,0101,Secondary Approval Status,CS
+0014,0102,Secondary Review Date,DA
+0014,0103,Secondary Review Time,TM
+0014,0104,Secondary Reviewer Name,PN
+0014,0105,Repair ID,ST
+0014,0106,Multiple Component Approval Sequence,SQ
+0014,0107,Other Approval Status,CS
+0014,0108,Other Secondary Approval Status,CS
+0014,1010,Actual Environmental Conditions,ST
+0014,1020,Expiry Date,DA
+0014,1040,Environmental Conditions,ST
+0014,2002,Evaluator Sequence,SQ
+0014,2004,Evaluator Number,IS
+0014,2006,Evaluator Name,PN
+0014,2008,Evaluation Attempt,IS
+0014,2012,Indication Sequence,SQ
+0014,2014,Indication Number,IS
+0014,2016,Indication Label,SH
+0014,2018,Indication Description,ST
+0014,201a,Indication Type,CS
+0014,201c,Indication Disposition,CS
+0014,201e,Indication ROI Sequence,SQ
+0014,2030,Indication Physical Property Sequence,SQ
+0014,2032,Property Label,SH
+0014,2202,Coordinate System Number of Axes,IS
+0014,2204,Coordinate System Axes Sequence,SQ
+0014,2206,Coordinate System Axis Description,ST
+0014,2208,Coordinate System Data Set Mapping,CS
+0014,220a,Coordinate System Axis Number,IS
+0014,220c,Coordinate System Axis Type,CS
+0014,220e,Coordinate System Axis Units,CS
+0014,2210,Coordinate System Axis Values,OB
+0014,2220,Coordinate System Transform Sequence,SQ
+0014,2222,Transform Description,ST
+0014,2224,Transform Number of Axes,IS
+0014,2226,Transform Order of Axes,IS
+0014,2228,Transformed Axis Units,CS
+0014,222a,Coordinate System Transform Rotation and Scale Matrix,DS
+0014,222c,Coordinate System Transform Translation Matrix,DS
+0014,3011,Internal Detector Frame Time,DS
+0014,3012,Number of Frames Integrated,DS
+0014,3020,Detector Temperature Sequence,SQ
+0014,3022,Sensor Name,ST
+0014,3024,Horizontal Offset of Sensor,DS
+0014,3026,Vertical Offset of Sensor,DS
+0014,3028,Sensor Temperature,DS
+0014,3040,Dark Current Sequence,SQ
+0014,3050,Dark Current Counts,OB or OW
+0014,3060,Gain Correction Reference Sequence,SQ
+0014,3070,Air Counts,OB or OW
+0014,3071,KV Used in Gain Calibration,DS
+0014,3072,MA Used in Gain Calibration,DS
+0014,3073,Number of Frames Used for Integration,DS
+0014,3074,Filter Material Used in Gain Calibration,LO
+0014,3075,Filter Thickness Used in Gain Calibration,DS
+0014,3076,Date of Gain Calibration,DA
+0014,3077,Time of Gain Calibration,TM
+0014,3080,Bad Pixel Image,OB
+0014,3099,Calibration Notes,LT
+0014,3100,Linearity Correction Technique,LT
+0014,3101,Beam Hardening Correction Technique,LT
+0014,4002,Pulser Equipment Sequence,SQ
+0014,4004,Pulser Type,CS
+0014,4006,Pulser Notes,LT
+0014,4008,Receiver Equipment Sequence,SQ
+0014,400a,Amplifier Type,CS
+0014,400c,Receiver Notes,LT
+0014,400e,Pre-Amplifier Equipment Sequence,SQ
+0014,400f,Pre-Amplifier Notes,LT
+0014,4010,Transmit Transducer Sequence,SQ
+0014,4011,Receive Transducer Sequence,SQ
+0014,4012,Number of Elements,US
+0014,4013,Element Shape,CS
+0014,4014,Element Dimension A,DS
+0014,4015,Element Dimension B,DS
+0014,4016,Element Pitch A,DS
+0014,4017,Measured Beam Dimension A,DS
+0014,4018,Measured Beam Dimension B,DS
+0014,4019,Location of Measured Beam Diameter,DS
+0014,401a,Nominal Frequency,DS
+0014,401b,Measured Center Frequency,DS
+0014,401c,Measured Bandwidth,DS
+0014,401d,Element Pitch B,DS
+0014,4020,Pulser Settings Sequence,SQ
+0014,4022,Pulse Width,DS
+0014,4024,Excitation Frequency,DS
+0014,4026,Modulation Type,CS
+0014,4028,Damping,DS
+0014,4030,Receiver Settings Sequence,SQ
+0014,4031,Acquired Soundpath Length,DS
+0014,4032,Acquisition Compression Type,CS
+0014,4033,Acquisition Sample Size,IS
+0014,4034,Rectifier Smoothing,DS
+0014,4035,DAC Sequence,SQ
+0014,4036,DAC Type,CS
+0014,4038,DAC Gain Points,DS
+0014,403a,DAC Time Points,DS
+0014,403c,DAC Amplitude,DS
+0014,4040,Pre-Amplifier Settings Sequence,SQ
+0014,4050,Transmit Transducer Settings Sequence,SQ
+0014,4051,Receive Transducer Settings Sequence,SQ
+0014,4052,Incident Angle,DS
+0014,4054,Coupling Technique,ST
+0014,4056,Coupling Medium,ST
+0014,4057,Coupling Velocity,DS
+0014,4058,Probe Center Location X,DS
+0014,4059,Probe Center Location Z,DS
+0014,405a,Sound Path Length,DS
+0014,405c,Delay Law Identifier,ST
+0014,4060,Gate Settings Sequence,SQ
+0014,4062,Gate Threshold,DS
+0014,4064,Velocity of Sound,DS
+0014,4070,Calibration Settings Sequence,SQ
+0014,4072,Calibration Procedure,ST
+0014,4074,Procedure Version,SH
+0014,4076,Procedure Creation Date,DA
+0014,4078,Procedure Expiration Date,DA
+0014,407a,Procedure Last Modified Date,DA
+0014,407c,Calibration Time,TM
+0014,407e,Calibration Date,DA
+0014,4080,Probe Drive Equipment Sequence,SQ
+0014,4081,Drive Type,CS
+0014,4082,Probe Drive Notes,LT
+0014,4083,Drive Probe Sequence,SQ
+0014,4084,Probe Inductance,DS
+0014,4085,Probe Resistance,DS
+0014,4086,Receive Probe Sequence,SQ
+0014,4087,Probe Drive Settings Sequence,SQ
+0014,4088,Bridge Resistors,DS
+0014,4089,Probe Orientation Angle,DS
+0014,408b,User Selected Gain Y,DS
+0014,408c,User Selected Phase,DS
+0014,408d,User Selected Offset X,DS
+0014,408e,User Selected Offset Y,DS
+0014,4091,Channel Settings Sequence,SQ
+0014,4092,Channel Threshold,DS
+0014,409a,Scanner Settings Sequence,SQ
+0014,409b,Scan Procedure,ST
+0014,409c,Translation Rate X,DS
+0014,409d,Translation Rate Y,DS
+0014,409f,Channel Overlap,DS
+0014,40a0,Image Quality Indicator Type,LO
+0014,40a1,Image Quality Indicator Material,LO
+0014,40a2,Image Quality Indicator Size,LO
+0014,5002,LINAC Energy,IS
+0014,5004,LINAC Output,IS
+0014,5100,Active Aperture,US
+0014,5101,Total Aperture,DS
+0014,5102,Aperture Elevation,DS
+0014,5103,Main Lobe Angle,DS
+0014,5104,Main Roof Angle,DS
+0014,5105,Connector Type,CS
+0014,5106,Wedge Model Number,SH
+0014,5107,Wedge Angle Float,DS
+0014,5108,Wedge Roof Angle,DS
+0014,5109,Wedge Element 1 Position,CS
+0014,510a,Wedge Material Velocity,DS
+0014,510b,Wedge Material,SH
+0014,510c,Wedge Offset Z,DS
+0014,510d,Wedge Origin Offset X,DS
+0014,510e,Wedge Time Delay,DS
+0014,510f,Wedge Name,SH
+0014,5110,Wedge Manufacturer Name,SH
+0014,5111,Wedge Description,LO
+0014,5112,Nominal Beam Angle,DS
+0014,5113,Wedge Offset X,DS
+0014,5114,Wedge Offset Y,DS
+0014,5115,Wedge Total Length,DS
+0014,5116,Wedge In Contact Length,DS
+0014,5117,Wedge Front Gap,DS
+0014,5118,Wedge Total Height,DS
+0014,5119,Wedge Front Height,DS
+0014,511a,Wedge Rear Height,DS
+0014,511b,Wedge Total Width,DS
+0014,511c,Wedge In Contact Width,DS
+0014,511d,Wedge Chamfer Height,DS
+0014,511e,Wedge Curve,CS
+0014,511f,Radius Along the Wedge,DS
+0016,0001,White Point,DS
+0016,0002,Primary Chromaticities,DS
+0016,0003,Battery Level,UT
+0016,0004,Exposure Time in Seconds,DS
+0016,0005,F-Number,DS
+0016,0006,OECF Rows,IS
+0016,0007,OECF Columns,IS
+0016,0008,OECF Column Names,UC
+0016,0009,OECF Values,DS
+0016,000a,Spatial Frequency Response Rows,IS
+0016,000b,Spatial Frequency Response Columns,IS
+0016,000c,Spatial Frequency Response Column Names,UC
+0016,000d,Spatial Frequency Response Values,DS
+0016,000e,Color Filter Array Pattern Rows,IS
+0016,000f,Color Filter Array Pattern Columns,IS
+0016,0010,Color Filter Array Pattern Values,DS
+0016,0011,Flash Firing Status,US
+0016,0012,Flash Return Status,US
+0016,0013,Flash Mode,US
+0016,0014,Flash Function Present,US
+0016,0015,Flash Red Eye Mode,US
+0016,0016,Exposure Program,US
+0016,0017,Spectral Sensitivity,UT
+0016,0018,Photographic Sensitivity,IS
+0016,0019,Self Timer Mode,IS
+0016,001a,Sensitivity Type,US
+0016,001b,Standard Output Sensitivity,IS
+0016,001c,Recommended Exposure Index,IS

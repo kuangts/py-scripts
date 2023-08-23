@@ -30,7 +30,7 @@ from vtkmodules.vtkCommonDataModel import vtkPolyData, vtkCellArray, vtkPolygon
 from vtkmodules.vtkFiltersSources import vtkSphereSource 
 from vtkmodules.vtkFiltersCore import vtkGlyph3D
 from vtkmodules.util.numpy_support import numpy_to_vtk
-from procrustes import *
+from tools.procrustes import *
 # from register import nicp # cannot run without this, don't know why
 
 

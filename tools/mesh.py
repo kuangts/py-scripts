@@ -4,9 +4,26 @@ from sklearn.neighbors import NearestNeighbors
 from scipy.interpolate import RBFInterpolator
 from scipy.ndimage import binary_dilation
 from vtkmodules.util.numpy_support import vtk_to_numpy
+from vtkmodules.vtkCommonCore import vtkPoints
+from vtkmodules.vtkCommonDataModel import vtkExplicitStructuredGrid, vtkCellArray, VTK_HEXAHEDRON
 from .ui import PolygonalSurfaceNodeSelector
-from .rendering import set_curvatures
 from .polydata import *
+
+
+def hex_from_numpy(nodes, elems, node_grid):
+    N = vtkPoints()
+    E = vtkCellArray()
+    for n in nodes:
+        N.InsertNextPoint(*n)
+    for e in elems:
+        E.InsertNextCell(8, e.tolist())
+    H = vtkExplicitStructuredGrid()
+    H.SetDimensions(node_grid.max(axis=0)+1)
+    H.SetPoints(N)
+    H.SetCells(E)
+    H.ComputeFacesConnectivityFlagsArray()
+
+    return H
 
 
 def read_inp(file):
@@ -44,6 +61,20 @@ def write_inp(f, nodes, elems):
     f.write('** End of Data')
     return None
 
+
+def read_feb(file):
+    with open(file,'r') as f:
+        Nodes, Elements = re.search(r"<Nodes[\S ]*>\s*(<.*>)\s*</Nodes>.*<Elements[\S ]*\"hex8\"[\S ]*>\s*(<.*>)\s*</Elements>", f.read(), flags=re.MULTILINE|re.DOTALL).groups()
+        nodes = re.findall(r'<node id[= ]*"(\d+)">(' + ','.join([r" *[-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)+ *"]*3) + r')</node>', Nodes, flags=re.MULTILINE|re.DOTALL)
+        elems = re.findall(r'<elem id[= ]*"(\d+)">(' + ','.join([r' *\d+ *']*8) + r')</elem>', Elements, flags=re.MULTILINE|re.DOTALL)
+
+    nodeid = np.asarray([int(nd[0]) for nd in nodes])-1
+    nodes_with_id = np.asarray([nd[1].split(',') for nd in nodes], dtype=float)
+    elems = np.asarray([el[1].split(',') for el in elems], dtype=int)-1
+    nodes = np.empty((nodeid.max()+1,3))
+    nodes[:] = np.nan
+    nodes[nodeid,:] = nodes_with_id[:]
+    return nodes, elems
 
 
 def default_grid_seed():
@@ -102,6 +133,28 @@ def calculate_grid(nodes, elems, seed=None, calculate_lip_index=False):
     else:
         return node_grid
 
+
+def remove_duplicate_nodes(nodes, elems, stable_order=True, return_index=False, return_inverse=False):
+    _, ind, ind_inv = np.unique(nodes, axis=0, return_index=True, return_inverse=True)
+
+    # maintain old order of nodes
+    if stable_order:
+        id = np.argsort(ind)
+        ind = ind[id]
+        id0 = np.empty((id.size,),dtype=int)
+        id0[id] = np.arange(id.size)
+        ind_inv = id0[ind_inv]
+
+    nodes = nodes[ind,:]
+    elems = ind_inv[elems]
+
+    return_tup = (nodes, elems)
+    if return_index:
+        return_tup += (ind,)
+    if return_inverse:
+        return_tup += (ind_inv,)
+
+    return return_tup
 
 
 def grid_3d_from_flat(node_grid):
@@ -274,7 +327,7 @@ class HexahedralMeshFix(PolygonalSurfaceNodeSelector):
         elems = self.elems
         node_grid = self.node_grid
 
-        ind_node_select = vtk_to_numpy(self.selection).flatten()
+        ind_node_select = vtk_to_numpy(self.selection).flatten()==1
         ind_node_select = ind_node_select.nonzero()[0]
         ind_node_change_3d = np.all(node_grid[:,None,:] == node_grid[ind_node_select,:][None,:,:], axis=2)
         d1,d2 = np.nonzero(ind_node_change_3d)
@@ -372,7 +425,6 @@ if __name__=='__main__':
     node_grid, ind_upper, ind_lower = calculate_grid(nodes, elems, calculate_lip_index=True)
 
     ff = boundary_faces(elems)
-    
 
 
     import scipy

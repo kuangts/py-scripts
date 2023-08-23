@@ -1,0 +1,105 @@
+98,98,Skeletal,Mandible,B,Point B,"Point located on the labial surface of the mandibular symphysis, where the alveolar ridge joins the basal mandible (at the level of the apices of the lower incisors) ","(118.721419, 44.34415, -110.052442)",Right,1
+48,48,Skeletal,Automatic Occlusion Upper,U1E-L,Midpoint of Left Upper Central Incisor Edge,The midpoint on the left maxillary central incisal edge,"(123.438939, 34.331, -91.758124)",Bottom,1
+6,6,Skeletal,Frankfort Horizontal,M-R,Right Mastoidale,Tip of right mastoid process,"(65.38935, 147.509991, -70.795119)",Right,1
+169,169,Skeletal,Skull,SOF-R,Right Superior Orbital Fissure,The most lateral extend of the right superior-orbital-fissure,"(92.13690764, 92.11523916, -7.11387831)",Front,1
+67,67,Skeletal,Automatic Occlusion Lower,L2E-R,Midpoint of Right Lower Lateral Incisor Edge,The midpoint on the right mandibular lateral incisal edge,"(109.793411, 41.097555, -91.1704)",Top,1
+61,61,Skeletal,Automatic Occlusion Upper,U7DBC-L,Distobuccal Cusp of Left Upper Second Molar,The distobuccal cusp of left maxillary second molar,"(153.130153, 77.581735, -83.420185)",Bottom,1
+72,72,Skeletal,Automatic Occlusion Lower,L5BC-R,Buccal Cusp of Right Lower Second Premolar,The buccal cusp of right mandibular second premolar,"(96.22677, 58.332721, -91.114903)",Top,1
+113,113,Skeletal,Mandible,Go-L,Left Gonion,"Point located  on the left mandibular gonial angle, midway between Left Inferior Gonion and Left Posterior Gonion","(170.915277, 119.37509, -101.245073)",Left,1
+191,191,Soft Tissue,Soft Tissue,ProfileIntersect,Profile Intersection Point,"The point where a true horizontal line, at the height of the intertragal notch, crosses the facial profile of an erect face that is looking forwards. Please NOTE: This point is determined in a profile photograph of the face, taken with the face in NHP.","(118.072984, 16.495232, -51.694555)",Right,1
+162,162,Skeletal,Automatic Occlusion Lower,L0R,Constructed Midpoint of Lower Central Incisal Root Tips,The midpoint between L1R-R and L1R-L,"(119.19487, 47.03876, -105.462015)",Front,1
+42,42,Skeletal,Automatic Occlusion Upper,U6DBC-R,Distobuccal Cusp of Right Upper First Molar,The distobuccal cusp of right maxillary first molar,"(90.925781, 71.043748, -87.523874)",Bottom,1
+194,194,Skeletal,Automatic Occlusion Lower,L34-Embrasure-R,Embrasure between Right L3 and L4,Embrasure between Right L3 and L4,"(102.745846, 49.114872, -93.498343)",Top,0
+197,197,Skeletal,Automatic Occlusion Upper,U6CF-L,Central fossa of Left Upper First Molar,Central fossa of Left Upper First Molar,"(146.546667, 66.479784, -86.581397)",Bottom,0
+13,13,Skeletal,Frankfort Horizontal,Fz-R,Right Frontozygomatic Suture,The most medial and anterior point of the right frontozygomatic suture ,"(67.866314, 57.837281, -12.979399)",Front,1
+106,106,Skeletal,Mandible,Cr-R,Right Coronion,The tip of right coronoid process,"(65.227156, 86.535938, -45.553284)",Right,1
+41,41,Skeletal,Automatic Occlusion Upper,U6MBC-R,Mesiobuccal Cusp of Right Upper First Molar,The mesiobuccal cusp of right maxillary first molar,"(91.400908, 65.615051, -88.420988)",Bottom,1
+111,111,Skeletal,Mandible,Ag-L,Left Antegonion,The deepest point of the left antegonial notch,"(167.663559, 104.728508, -110.636472)",Left,1
+170,170,Skeletal,Skull,SOF-L,Left Superior Orbital Fissure,The most lateral extend of the left superior-orbital-fissure,"(145.32012243, 89.27082569, -6.54809942)",Front,1
+86,86,Skeletal,Automatic Occlusion Lower,L4BC-L,Buccal Cusp of Left Lower First Premolar,The buccal cusp of left mandibular first premolar,"(136.974595, 50.60275, -90.339442)",Top,1
+91,91,Skeletal,Automatic Occlusion Lower,L6DBC-L,Distobuccal Cusp of Left Lower First Molar,The distobuccal cusp of left mandibular first molar,"(146.27899, 68.135475, -88.97993)",Top,1
+26,26,Skeletal,Sorted Landmarks for GATENO-XIA,J-L,Left Jugale Point,The point at which the temporal and frontal processes of the left zygomatic bone meet,"(180.124526, 71.477749, -31.980128)",Left,1
+131,131,Soft Tissue,Soft Tissue,En-R,Right Endocanthion,Soft tissue point located at the inner commissure of right eye fissure,"(98.656396, 45.595391, -21.760649)",Front,1
+84,84,Skeletal,Automatic Occlusion Lower,L3T-L,Tip of Left Lower Canine,The tip of left mandibular canine,"(132.67018, 43.176079, -91.341504)",Top,1
+117,117,Skeletal,Mandible,Co-L,Left Condylion,Point located in the middle of the posterior-articulating-surface of the left mandibular condyle,"(173.939669, 126.220128, -41.39694)",Left,1
+66,66,Skeletal,Automatic Occlusion Lower,L1E-R,Midpoint of Right Lower Central Incisor Edge,The midpoint on the right mandibular central incisal edge,"(115.46823, 38.91824, -92.009684)",Top,1
+100,100,Skeletal,Mandible,Gn,Gnathion,A point on the mandibular symphysis located midway between Pogonion and Menton,"(118.906213, 47.47323, -130.085089)",Right,1
+45,45,Skeletal,Automatic Occlusion Upper,U7MBC-R,Mesiobuccal Cusp of Right Upper Second Molar,The mesiobuccal cusp of right maxillary second molar,"(88.730654, 75.518939, -85.553657)",Bottom,1
+107,107,Skeletal,Mandible,Cr-L,Left Coronion,The tip of left coronoid process,"(172.642572, 86.553547, -45.935062)",Left,1
+177,177,Skeletal,Sorted Landmarks for GATENO-XIA,IC,Incisive Canal,The center of incisive foramen,"(119.691033, 50.608027, -75.612085)",Bottom,0
+189,189,Skeletal,Frankfort Horizontal,GFC-R,Center of Right Glenoid Fossa,The center point of the right glenoid fossa,"(69.386817, 123.394102, -35.476755)",Bottom,1
+29,29,Skeletal,Sorted Landmarks for GATENO-XIA,PNS,Posterior Nasal Spine,The tip of the posterior nasal spine,"(119.443902, 92.119102, -58.383947)",Bottom,1
+99,99,Skeletal,Mandible,Pg,Pogonion,"The most prominent point of the mid chin, on the mandibular symphysis","(118.391152, 45.483944, -124.589621)",Right,1
+15,15,Skeletal,Skull,Or-R,Right Orbitale,The point where the right inferior orbital rim intersects the  zygomatic-maxillary suture,"(83.917329, 52.674286, -36.759546)",Front,1
+96,96,Skeletal,Automatic Occlusion Lower,L7DBC-L,Distobuccal Cusp of Left Lower Second Molar,The distobuccal cusp of left mandibular second molar,"(148.41261, 80.082314, -84.899417)",Top,1
+52,52,Skeletal,Automatic Occlusion Upper,U4BC-L,Buccal Cusp of Left Upper First Premolar,The buccal cusp of left maxillary first premolar,"(141.985679, 51.127307, -90.249842)",Bottom,1
+83,83,Skeletal,Automatic Occlusion Lower,L2E-L,Midpoint of Left Lower Lateral Incisor Edge,The midpoint on the left mandibular lateral incisal edge,"(127.217475, 40.390457, -91.100541)",Top,1
+168,168,Skeletal,Mandible,Gos-L,Left Superior Gonion,The junction of the gonial angle with the posterior border of the left mandible,"(171.348988, 122.026359, -88.612557)",Left,1
+105,105,Skeletal,Sorted Landmarks for GATENO-XIA,SIG-L,Left Sigmoid Notch,The deepest point on the left mandibular sigmoid notch,"(171.047348, 102.316879, -61.366379)",Left,1
+196,196,Skeletal,Automatic Occlusion Upper,U6CF-R,Central fossa of Right Upper First Molar,Central fossa of Right UpperFirst Molar,"(93.833853, 68.611092, -87.033661)",Bottom,0
+80,80,Skeletal,Automatic Occlusion Lower,L7DBC-R,Distobuccal Cusp of Right Lower Second Molar,The distobuccal cusp of right mandibular second molar,"(90.493576, 80.066331, -86.328553)",Top,1
+184,184,Skeletal,Automatic Occlusion Lower,L6CF-L,Central fossa of Left Lower First Molar,Central fossa of Left Lower Firts Molar,"(142.605501, 68.102673, -90.444979)",Top,1
+63,63,Skeletal,Automatic Occlusion Lower,L0,Constructed Lower Incisal Midpoint,The point at the intersection of the lower dental midline and the imaginary arc formed by the edges of the lower incisors,"(118.427047, 38.471145, -91.260906)",Top,1
+34,34,Skeletal,Automatic Occlusion Upper,U2E-R,Midpoint of Right Upper Lateral Incisor Edge,The midpoint on the right maxillary lateral incisal edge,"(106.108518, 38.687001, -90.195896)",Bottom,1
+25,25,Skeletal,Sorted Landmarks for GATENO-XIA,J-R,Right Jugale Point,The point at which the temporal and frontal processes of the right zygomatic bone meet,"(55.623712, 73.724425, -34.645562)",Right,1
+40,40,Skeletal,Automatic Occlusion Upper,U6MLC-R,Mesiolingual Cusp of Right Upper First Molar,The mesiolingual cusp of right maxillary first molar,"(97.07949, 67.740541, -87.411312)",Bottom,1
+55,55,Skeletal,Automatic Occlusion Upper,U6MLC-L,Mesiolingual Cusp of Left Upper First Molar,The mesiolingual cusp of left maxillary first molar,"(142.85579, 65.203739, -87.78832)",Bottom,1
+1,1,Skeletal,Frankfort Horizontal,Ba,Basion,The most anterior point of foramen magnum,"(118.519282, 135.265257, -55.695621)",Bottom,1
+14,14,Skeletal,Frankfort Horizontal,Fz-L,Left Frontozygomatic Suture,The most medial and anterior point of the left frontozygomatic suture ,"(168.395363, 55.673043, -12.145054)",Front,1
+75,75,Skeletal,Automatic Occlusion Lower,L6DBC-R,Distobuccal Cusp of Right Lower First Molar,The distobuccal cusp of right mandibular first molar,"(93.092858, 66.685403, -89.960972)",Top,1
+88,88,Skeletal,Automatic Occlusion Lower,L5BC-L,Buccal Cusp of Left Lower Second Premolar,The buccal cusp of left mandibular second premolar,"(141.543894, 57.018705, -91.511375)",Top,1
+33,33,Skeletal,Automatic Occlusion Upper,U1E-R,Midpoint of Right Upper Central Incisor Edge,The midpoint on the right maxillary central incisal edge,"(114.229414, 34.850406, -91.846964)",Bottom,1
+16,16,Skeletal,Sorted Landmarks for GATENO-XIA,Or-L,Left Orbitale,The point where the left inferior orbital rim intersects the  zygomatic-maxillary suture,"(156.002226, 52.121162, -37.932164)",Front,1
+120,120,Soft Tissue,Sorted Landmarks for GATENO-XIA,Gb',Soft Tissue Glabella,The most prominent skin point located on the median forehead at the level of the eyebrows,"(119.074346, 35.351029, 5.129207)",Right,1
+110,110,Skeletal,Mandible,Ag-R,Right Antegonion,The deepest point of the right antegonial notch,"(74.407765, 107.557125, -112.200128)",Right,1
+164,164,Skeletal,Frankfort Horizontal,SMF-L,Left Styloid-Mastoid Foramen,Center of the left styloid-mastoid foramen,"(158.407601, 138.62515, -49.828752)",Bottom,1
+115,115,Skeletal,Mandible,COR-L,Left Center of Rotation,Center of rotation of the left mandibular condyle ,"(174.022196, 121.766128, -45.348494)",Left,1
+30,30,Skeletal,Automatic Occlusion Upper,U0,Constructed Upper Incisal Midpoint,The point at the intersection of the upper dental midline and the imaginary arc formed by the edges of the upper incisors,"(119.074254, 35.073011, -91.784071)",Bottom,1
+190,190,Soft Tissue,Soft Tissue,IntTragal-R,Right Inter-tragal Notch,A skin point in the deepest concavity of the right ear's inter-tragal notch.,"(40.046028, 133.783099, -57.588089)",Right,1
+10,10,Skeletal,Frankfort Horizontal,Gb,Glabella,The most prominent sagittal point on the outer surface of supraorbital bandeau,"(119.39153, 41.45048, 4.868913)",Right,1
+70,70,Skeletal,Automatic Occlusion Lower,L4BC-R,Buccal Cusp of Right Lower First Premolar,The buccal cusp of right mandibular first premolar,"(100.046358, 51.197781, -91.167762)",Top,1
+161,161,Skeletal,Automatic Occlusion Upper,U0R,Constructed Midpoint of Upper Central Incisal Root Tips,The midpoint between U1R-R and U1R-L,"(119.707897, 41.083435, -71.785308)",Front,1
+90,90,Skeletal,Automatic Occlusion Lower,L6MBC-L,Mesiobuccal Cusp of Left Lower First Molar,The mesiobuccal cusp of left mandibular first molar,"(144.427146, 65.18831, -90.002258)",Top,1
+3,3,Skeletal,Frankfort Horizontal,FMP,Foramen Magnum Posterior,"The most posterior point of foramen magnum, on the sagittal plane","(119.374609, 172.427976, -58.399653)",Bottom,1
+163,163,Skeletal,Frankfort Horizontal,SMF-R,Right Styloid-Mastoid Foramen,Center of the right styloid-mastoid foramen,"(77.364675, 140.724992, -51.557763)",Bottom,1
+82,82,Skeletal,Automatic Occlusion Lower,L1E-L,Midpoint of Left Lower Central Incisor Edge,The midpoint on the left mandibular central incisal edge,"(121.470301, 39.266051, -91.883138)",Top,1
+95,95,Skeletal,Automatic Occlusion Lower,L7MBC-L,Mesiobuccal Cusp of Left Lower Second Molar,The mesiobuccal cusp of left mandibular second molar,"(147.944721, 75.479537, -86.517498)",Top,1
+188,188,Skeletal,Frankfort Horizontal,GFC-L,Center of Left Glenoid Fossa,The center point of the left glenoid fossa,"(168.060977, 122.62417, -34.379697)",Bottom,1
+92,92,Skeletal,Automatic Occlusion Lower,L6DC-L,Distal Cusp of Left Lower First Molar,The distal cusp of left mandibular first molar,"(146.067103, 71.025727, -88.795906)",Top,1
+104,104,Skeletal,Sorted Landmarks for GATENO-XIA,SIG-R,Right Sigmoid Notch,The deepest point on the right mandibular sigmoid notch,"(67.721219, 103.296705, -59.370623)",Right,1
+12,12,Skeletal,Frankfort Horizontal,Rh,Rhinion,Point located at the inferior extent of the internasal suture,"(119.236882, 36.713592, -32.094833)",Right,1
+68,68,Skeletal,Automatic Occlusion Lower,L3T-R,Tip of Right Lower Canine,The tip of right mandibular canine,"(103.741824, 43.889227, -92.394306)",Top,1
+11,11,Skeletal,Frankfort Horizontal,N,Nasion,Point of convergence of the naso-frontal and internasal sutures ,"(119.350278, 44.688866, -7.519551)",Right,1
+101,101,Skeletal,Mandible,Me,Menton,The most inferior point of the mandibular symphysis,"(118.542928, 50.34981, -132.280512)",Right,1
+56,56,Skeletal,Automatic Occlusion Upper,U6MBC-L,Mesiobuccal Cusp of Left Upper First Molar,The mesiobuccal cusp of left maxillary first molar,"(148.74669, 63.199304, -88.183534)",Bottom,1
+166,166,Skeletal,Mandible,Goi-L,Left Inferior Gonion ,The junction of the gonial angle with the inferior border of the left mandible,"(168.278643, 110.881144, -108.931075)",Left,1
+8,8,Skeletal,Sorted Landmarks for GATENO-XIA,Po-R,Right Porion,The most superior point on the right bony external acoustic meatus,"(55.196581, 133.974123, -37.016466)",Right,1
+167,167,Skeletal,Mandible,Gos-R,Right Superior Gonion,The junction of the gonial angle with the posterior border of the right mandible,"(67.754415, 123.55711, -87.626931)",Right,1
+132,132,Soft Tissue,Soft Tissue,En-L,Left Endocanthion,Soft tissue point located at the inner commissure of left eye fissure,"(138.098212, 44.264081, -21.702629)",Front,1
+79,79,Skeletal,Automatic Occlusion Lower,L7MBC-R,Mesiobuccal Cusp of Right Lower Second Molar,The mesiobuccal cusp of right mandibular second molar,"(91.193411, 76.413733, -86.016828)",Top,1
+46,46,Skeletal,Automatic Occlusion Upper,U7DBC-R,Distobuccal Cusp of Right Upper Second Molar,The distobuccal cusp of right maxillary second molar,"(87.932285, 80.872407, -83.915491)",Bottom,1
+49,49,Skeletal,Automatic Occlusion Upper,U2E-L,Midpoint of Left Upper Lateral Incisor Edge,The midpoint on the left maxillary lateral incisal edge,"(131.859139, 38.001291, -89.444029)",Bottom,1
+165,165,Skeletal,Mandible,Goi-R,Right Inferior Gonion ,The junction of the gonial angle with the inferior border of the right mandible,"(74.272708, 111.604953, -111.749613)",Right,1
+9,9,Skeletal,Sorted Landmarks for GATENO-XIA,Po-L,Left Porion,The most superior point on the left bony external acoustic meatus,"(183.578973, 132.829501, -37.016466)",Left,1
+112,112,Skeletal,Mandible,Go-R,Right Gonion,"Point located  on the right mandibular gonial angle, midway between Right Inferior Gonion and Right Posterior Gonion","(71.398431, 117.941006, -108.414367)",Right,1
+28,28,Skeletal,Sorted Landmarks for GATENO-XIA,ANS,Anterior Nasal Spine,The tip of the anterior nasal spine,"(119.39418, 40.709733, -61.903013)",Right,1
+171,171,Skeletal,Sorted Landmarks for GATENO-XIA,GPF-R,Right Greater Palatine Foramen,The center of the right greater palatine foramen,"(102.614602, 81.309343, -60.013518)",Bottom,1
+185,185,Skeletal,Automatic Occlusion Lower,L6CF-R,Central fossa of Right Lower First Molar,Central fossa of Right Lower Firts Molar,"(95.5981, 68.362575, -90.31286)",Top,1
+27,27,Skeletal,Sorted Landmarks for GATENO-XIA,A,Point A,"Point located on the labial surface of the intermaxillary suture, where the alveolar ridge joins the basal maxilla","(119.772568, 40.611989, -68.524794)",Right,1
+76,76,Skeletal,Automatic Occlusion Lower,L6DC-R,Distal Cusp of Right Lower First Molar,The distal cusp of right mandibular first molar,"(92.539525, 68.800219, -89.608384)",Top,1
+54,54,Skeletal,Automatic Occlusion Upper,U5BC-L,Buccal Cusp of Left Upper Second Premolar,The buccal cusp of left maxillary second premolar,"(145.937655, 57.228589, -89.375119)",Bottom,1
+60,60,Skeletal,Automatic Occlusion Upper,U7MBC-L,Mesiobuccal Cusp of Left Upper Second Molar,The mesiobuccal cusp of left maxillary second molar,"(151.627208, 73.460392, -84.53806)",Bottom,1
+2,2,Skeletal,Frankfort Horizontal,S,Sella,"The midpoint of the pituitary fossa, on the sagittal plane","(119.306123, 112.898094, -13.488388)",Top,1
+172,172,Skeletal,Sorted Landmarks for GATENO-XIA,GPF-L,Left Greater Palatine Foramen,The center of the left greater palatine foramen,"(137.1027, 80.987241, -61.475814)",Bottom,1
+74,74,Skeletal,Automatic Occlusion Lower,L6MBC-R,Mesiobuccal Cusp of Right Lower First Molar,The mesiobuccal cusp of right mandibular first molar,"(95.171799, 64.328009, -90.829617)",Top,1
+58,58,Skeletal,Automatic Occlusion Upper,U6DLC-L,Distolingual Cusp of Left Upper First Molar,The distolingual cusp of left maxillary first molar,"(144.432627, 70.360554, -86.693138)",Bottom,1
+116,116,Skeletal,Mandible,Co-R,Right Condylion,Point located in the middle of the posterior-articulating-surface of the right mandibular condyle,"(61.884233, 126.220128, -41.39694)",Right,1
+7,7,Skeletal,Frankfort Horizontal,M-L,Left Mastoidale,Tip of  left mastoid process,"(173.839811, 145.420345, -70.210511)",Left,1
+114,114,Skeletal,Mandible,COR-R,Right Center of Rotation,Center of rotation of the right mandibular condyle,"(63.798954, 122.338767, -46.812638)",Right,1
+57,57,Skeletal,Automatic Occlusion Upper,U6DBC-L,Distobuccal Cusp of Left Upper First Molar,The distobuccal cusp of left maxillary first molar,"(149.215282, 68.82851, -86.970631)",Bottom,1
+35,35,Skeletal,Automatic Occlusion Upper,U3T-R,Tip of Right Upper Canine,The tip of right maxillary canine,"(100.477492, 44.779726, -90.510208)",Bottom,1
+50,50,Skeletal,Automatic Occlusion Upper,U3T-L,Tip of Left Upper Canine,The tip of left maxillary canine,"(137.319006, 43.494294, -90.768909)",Bottom,1
+195,195,Skeletal,Automatic Occlusion Lower,L34-Embrasure-L,Embrasure between Left L3 and L4,Embrasure between Left  L3 and L4,"(134.673162, 48.897865, -92.898471)",Top,0
+39,39,Skeletal,Automatic Occlusion Upper,U5BC-R,Buccal Cusp of Right Upper Second Premolar,The buccal cusp of right maxillary second premolar,"(93.449522, 59.118496, -89.834591)",Bottom,1
+43,43,Skeletal,Automatic Occlusion Upper,U6DLC-R,Distolingual Cusp of Right Upper First Molar,The distolingual cusp of right maxillary first molar,"(95.298455, 72.31427, -87.018576)",Bottom,1
+37,37,Skeletal,Automatic Occlusion Upper,U4BC-R,Buccal Cusp of Right Upper First Premolar,The buccal cusp of right maxillary first premolar,"(96.591089, 52.215948, -90.342942)",Bottom,1

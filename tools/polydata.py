@@ -20,7 +20,9 @@ from vtkmodules.vtkCommonDataModel import (
     vtkIterativeClosestPointTransform,
     vtkCellArray,
     vtkPolyLine,
-    vtkVertex
+    vtkVertex,
+    vtkBox,
+    vtkPolygon
 )
 from vtkmodules.vtkFiltersCore import (
     vtkPolyDataNormals,
@@ -32,7 +34,9 @@ from vtkmodules.vtkFiltersCore import (
     vtkThreshold,
     vtkWindowedSincPolyDataFilter,
     vtkCleanPolyData,
-    vtkExtractEdges
+    vtkExtractEdges,
+    vtkImplicitPolyDataDistance,
+    vtkConnectivityFilter
 )
 from vtkmodules.vtkFiltersGeneral import (
     vtkTransformPolyDataFilter,
@@ -162,7 +166,28 @@ def polydata_from_numpy(nodes, polys, lines=True, verts=False):
 
     return polyd
 
+def polydata_from_plane(plane_abcd, bounds):
+    intersections = np.empty((18,), dtype=float)
+    intersections[...] = float('nan')
+    vtkBox.IntersectWithPlane(bounds, -plane_abcd[:-1]*plane_abcd[-1], plane_abcd[:-1], intersections)
+    verts = intersections.reshape(-1,3)
+    verts = verts[np.any(verts!=0, axis=1) & np.any(~np.isnan(verts), axis=1)]
 
+    polyd = vtkPolyData()
+    points = vtkPoints()
+    for p in verts:
+        points.InsertNextPoint(p)
+    cells = vtkCellArray()
+    l = vtkPolygon()
+    n = points.GetNumberOfPoints()
+    l.GetPointIds().SetNumberOfIds(n)
+    for i in range(n):
+        l.GetPointIds().SetId(i,i)
+    cells.InsertNextCell(l)
+    polyd.SetPoints(points)
+    polyd.SetPolys(cells)
+
+    return polyd
 
 
 def write_polydata_to_stl(polyd:vtkPolyData, file:str):
@@ -224,6 +249,28 @@ def cut_polydata(polyd:vtkPolyData, plane_origin:numpy.ndarray, plane_normal:num
     return cutter.GetOutput()
 
 
+def clip_polydata_with_mesh(image_polydata, mesh_polydata):
+    # this function requires further refinement
+
+    dist = vtkImplicitPolyDataDistance()
+    dist.SetInput(mesh_polydata)
+
+    clipper = vtkClipPolyData()
+    clipper.SetClipFunction(dist)
+    clipper.SetInputData(image_polydata)
+    clipper.InsideOutOn()
+    clipper.SetValue(0.0)
+    clipper.GenerateClippedOutputOff()
+
+    largest_region = vtkConnectivityFilter()
+    largest_region.SetInputConnection(clipper.GetOutputPort())
+    largest_region.SetExtractionModeToLargestRegion()
+    largest_region.Update()
+    clipped = largest_region.GetOutput()
+
+    return clipped
+
+
 def icp_register(source, target):
 
     T = vtkIterativeClosestPointTransform()
@@ -242,19 +289,23 @@ def triangle_strip(ind_1d:numpy.ndarray):
     strip.InsertNextCell(l)
     return strip
 
+
 def polylines(ind_2d:numpy.ndarray): # each row is a polyline
+
     lines = vtkCellArray()
+    for id in ind_2d:
+        lines.InsertNextCell(len(id), id)
 
-    for i, id in enumerate(ind_2d):
+        # l = vtkPolyLine()
+        # l.GetPointIds().SetNumberOfIds(id.size)
 
-        l = vtkPolyLine()
-        l.GetPointIds().SetNumberOfIds(id.size)
+        # for i,k in enumerate(id):
+        #     l.GetPointIds().SetId(i,k)
 
-        for i,k in enumerate(id):
-            l.GetPointIds().SetId(i,k)
+        # lines.InsertNextCell(l)
 
-        lines.InsertNextCell(l)
-        return lines
+    return lines
+
 
 def test():
     pass

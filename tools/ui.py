@@ -3,7 +3,7 @@ from enum import IntFlag
 from enum import auto as enum_auto
 import numpy as np
 from vtkmodules.vtkCommonColor import vtkNamedColors, vtkColorSeries
-from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData, vtkImageData
+from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData, vtkImageData, vtkExplicitStructuredGrid, vtkStructuredGrid
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
     vtkMapper,
@@ -18,14 +18,24 @@ from vtkmodules.vtkRenderingCore import (
     vtkRenderWindowInteractor,
     vtkRenderer,
     vtkColorTransferFunction,
-    
+    vtkInteractorStyle,
+    vtkGlyph3DMapper,
+    vtkProp,
+    vtkBillboardTextActor3D
 )
 from vtkmodules.vtkFiltersGeneral import vtkCurvatures
-from vtkmodules.vtkFiltersCore import vtkGlyph3D
+from vtkmodules.vtkFiltersCore import vtkGlyph3D, vtkExtractEdges
 from vtkmodules.vtkCommonCore import vtkLookupTable, vtkIdTypeArray, vtkPoints
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
-from vtkmodules.vtkRenderingCore import vtkProp, vtkInteractorStyle, vtkGlyph3DMapper
 from vtkmodules.vtkFiltersSources import vtkSphereSource 
+
+#_______________________#
+# crash without following lines
+# noinspection PyUnresolvedReferences
+import vtkmodules.vtkInteractionStyle
+# noinspection PyUnresolvedReferences
+import vtkmodules.vtkRenderingOpenGL2
+#_______________________#
 
 
 # from .polydata import *
@@ -87,39 +97,6 @@ class MODE(IntFlag):
 class Window():
 
     DEFAULT_STYLE_CLASS = vtkInteractorStyleTrackballCamera
-    
-    @staticmethod
-    def get_diverging_lut():
-        """
-        See: [Diverging Color Maps for Scientific Visualization](https://www.kennethmoreland.com/color-maps/)
-                        start point         midPoint            end point
-        cool to warm:     0.230, 0.299, 0.754 0.865, 0.865, 0.865 0.706, 0.016, 0.150
-        purple to orange: 0.436, 0.308, 0.631 0.865, 0.865, 0.865 0.759, 0.334, 0.046
-        green to purple:  0.085, 0.532, 0.201 0.865, 0.865, 0.865 0.436, 0.308, 0.631
-        blue to brown:    0.217, 0.525, 0.910 0.865, 0.865, 0.865 0.677, 0.492, 0.093
-        green to red:     0.085, 0.532, 0.201 0.865, 0.865, 0.865 0.758, 0.214, 0.233
-
-        :return:
-        """
-        ctf = vtkColorTransferFunction()
-        ctf.SetColorSpaceToDiverging()
-        # Cool to warm.
-        ctf.AddRGBPoint(0.0, 0.230, 0.299, 0.754)
-        ctf.AddRGBPoint(0.5, 0.865, 0.865, 0.865)
-        ctf.AddRGBPoint(1.0, 0.706, 0.016, 0.150)
-
-        table_size = 256
-        lut = vtkLookupTable()
-        lut.SetNumberOfTableValues(table_size)
-        lut.Build()
-
-        for i in range(0, table_size):
-            rgba = list(ctf.GetColor(float(i) / table_size))
-            rgba.append(1)
-            lut.SetTableValue(i, rgba)
-
-        return lut
-
 
 
     def __init__(self):
@@ -137,28 +114,26 @@ class Window():
 
         self.lut = self.get_diverging_lut()
 
-        self.attach_style()
-        return None
-
-
-    def attach_style(self, style=None):
-        if style is None:
-            self.style = self.DEFAULT_STYLE_CLASS()
-            # Interactor callbacks
-            self.style.AddObserver('LeftButtonPressEvent', self.mouse_event)
-            self.style.AddObserver('LeftButtonReleaseEvent', self.mouse_event)
-            self.style.AddObserver('RightButtonPressEvent', self.mouse_event)
-            self.style.AddObserver('RightButtonReleaseEvent', self.mouse_event)
-            self.style.AddObserver('MouseMoveEvent', self.mouse_event)
-            self.style.AddObserver('KeyPressEvent', self.key_event)
-            self.style.AddObserver('KeyReleaseEvent', self.key_event)
-        else:
-            self.style = style
+        self.style = self.DEFAULT_STYLE_CLASS()
+        # Interactor callbacks
+        self.style.AddObserver('LeftButtonPressEvent', self.mouse_event)
+        self.style.AddObserver('LeftButtonReleaseEvent', self.mouse_event)
+        self.style.AddObserver('RightButtonPressEvent', self.mouse_event)
+        self.style.AddObserver('RightButtonReleaseEvent', self.mouse_event)
+        self.style.AddObserver('MouseMoveEvent', self.mouse_event)
+        self.style.AddObserver('KeyPressEvent', self.key_event)
+        self.style.AddObserver('KeyReleaseEvent', self.key_event)
 
         self.mouse_status = 0
         self.style.SetDefaultRenderer(self.renderer)
         self.interactor.SetInteractorStyle(self.style)
+
         return None
+
+
+
+#____________________________________________________________________#
+# start, quit, refresh, save
 
 
     def start(self):
@@ -178,9 +153,33 @@ class Window():
         self.render_window.Render()
 
 
+    def save(self):
+        pass
+
+
+    def save_ui(self, **kwargs):
+
+        from tkinter import Tk, filedialog
+        Tk().withdraw()
+    
+        try:
+            with filedialog.asksaveasfile(**kwargs) as f:
+                self.save_file(f)
+        except:
+            print("file didn't save")        
+
+
+    def save_file(self, f):
+        pass
+
+
+#____________________________________________________________________#
+# interaction
+
+
     def key_event(self, obj, event):
         key = obj.GetInteractor().GetKeySym()
-
+        print(key)
         if event=='KeyPressEvent':
             # disable auto-repeat by monitoring held keys
             if not hasattr(self, '_keys'):
@@ -209,26 +208,6 @@ class Window():
             self.save()
 
         return None
-
-
-    def save(self):
-        pass
-
-
-    def save_ui(self, **kwargs):
-
-        from tkinter import Tk, filedialog
-        Tk().withdraw()
-    
-        try:
-            with filedialog.asksaveasfile(**kwargs) as f:
-                self.save_file(f)
-        except:
-            print("file didn't save")        
-
-
-    def save_file(self, f):
-        pass
 
 
     def key_release_event(self, key):
@@ -306,6 +285,102 @@ class Window():
         return self.style.OnMouseMove()
 
 
+#____________________________________________________________________#
+# methods
+
+    @staticmethod
+    def get_diverging_lut():
+        """
+        See: [Diverging Color Maps for Scientific Visualization](https://www.kennethmoreland.com/color-maps/)
+                        start point         midPoint            end point
+        cool to warm:     0.230, 0.299, 0.754 0.865, 0.865, 0.865 0.706, 0.016, 0.150
+        purple to orange: 0.436, 0.308, 0.631 0.865, 0.865, 0.865 0.759, 0.334, 0.046
+        green to purple:  0.085, 0.532, 0.201 0.865, 0.865, 0.865 0.436, 0.308, 0.631
+        blue to brown:    0.217, 0.525, 0.910 0.865, 0.865, 0.865 0.677, 0.492, 0.093
+        green to red:     0.085, 0.532, 0.201 0.865, 0.865, 0.865 0.758, 0.214, 0.233
+
+        :return:
+        """
+        ctf = vtkColorTransferFunction()
+        ctf.SetColorSpaceToDiverging()
+        # Cool to warm.
+        ctf.AddRGBPoint(0.0, 0.230, 0.299, 0.754)
+        ctf.AddRGBPoint(0.5, 0.865, 0.865, 0.865)
+        ctf.AddRGBPoint(1.0, 0.706, 0.016, 0.150)
+
+        table_size = 256
+        lut = vtkLookupTable()
+        lut.SetNumberOfTableValues(table_size)
+        lut.Build()
+
+        for i in range(0, table_size):
+            rgba = list(ctf.GetColor(float(i) / table_size))
+            rgba.append(1)
+            lut.SetTableValue(i, rgba)
+
+        return lut
+
+
+    @staticmethod
+    def get_ct_lut():
+        # Define a suitable grayscale lut
+        bw_lut = vtkLookupTable()
+        bw_lut.SetTableRange(0, 4096)
+        bw_lut.SetSaturationRange(0, 0)
+        bw_lut.SetHueRange(0, 0)
+        bw_lut.SetValueRange(0.2, 1)
+        bw_lut.Build()
+        return bw_lut
+
+
+    @staticmethod
+    def get_random_color():
+        colors = vtkNamedColors()
+        colornames = colors.GetColorNames().split('\n')
+        return colors.GetColor3d(colornames[np.random.randint(0,len(colornames))])
+
+
+    def add_polydata(self, polyd:vtkPolyData):
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputData(polyd)
+        actor = vtkActor()
+        actor.SetMapper(mapper)
+        color = self.get_random_color()
+        actor.GetProperty().SetColor(color)
+        self.renderer.AddActor(actor)
+        actor.GetProperty().EdgeVisibilityOn()
+        return actor
+
+
+    def add_explicit_structure_grid(self, esg:vtkExplicitStructuredGrid):
+        mapper = vtkDataSetMapper()
+        mapper.SetInputData(esg)
+        actor = vtkActor()
+        actor.GetProperty().EdgeVisibilityOn()
+        color = self.get_random_color()
+        actor.GetProperty().SetColor(color)
+        # actor.GetProperty().SetOpacity(.5)
+        actor.SetMapper(mapper)
+        self.renderer.AddActor(actor)
+
+
+
+    def text3d_actor(self, coords:np.ndarray, text:str):
+        
+        actor = vtkBillboardTextActor3D()
+        actor.SetPosition(coords)
+        actor.SetInput(text)
+        actor.SetDisplayOffset(0,10)
+        actor.GetTextProperty().SetFontSize(24)
+        actor.GetTextProperty().SetColor((0,0,0))
+        actor.GetTextProperty().SetJustificationToCentered()
+        actor.PickableOff()
+        # actor.ForceOpaqueOn()
+        self.renderer.AddActor(actor)
+        return actor
+
+
+
 class Selector(Window):
 
 
@@ -346,10 +421,11 @@ class Selector(Window):
         mapper.SetArrayName('Mean_Curvature')
         actor = vtkActor()
         actor.SetMapper(mapper)
+        actor.GetProperty().EdgeVisibilityOn()
         self.renderer.AddActor(actor)
         self.picker.AddPickList(actor)
     
-        return None
+        return actor
 
     def add_show_polydata(self, polyd):
 
@@ -368,7 +444,7 @@ class Selector(Window):
         actor.GetProperty().SetOpacity(.5)
         self.renderer.AddActor(actor)
     
-        return None
+        return actor
 
 
     def get_pick_props(self):
@@ -653,10 +729,11 @@ class PolygonalSurfacePointSelector(Selector):
 
 class PolygonalSurfaceNodeSelector(Selector):
 
-    def initialize(self, pick_surf:vtkPolyData, other_surf:vtkPolyData):
+    def initialize(self, pick_surf:vtkPolyData, other_surf:vtkPolyData=None):
 
         self.add_pick_polydata(pick_surf)
-        self.add_show_polydata(other_surf)
+        if other_surf is not None:
+            self.add_show_polydata(other_surf)
 
         index_id = vtkIdTypeArray()
         self.selection = index_id
@@ -665,10 +742,14 @@ class PolygonalSurfaceNodeSelector(Selector):
         index_id.SetNumberOfComponents(1)
         index_id.Fill(0)
         pick_surf.GetPointData().AddArray(index_id)
+        pick_surf.GetPointData().SetActiveScalars('Index')
 
         src = vtkSphereSource()
         src.SetRadius(.5)
         src.Update()
+        src0 = vtkSphereSource()
+        src0.SetRadius(.5)
+        src0.Update()
 
         glyph_mapper = vtkGlyph3DMapper()
         glyph_mapper.SetSourceIndexArray('Index')
@@ -679,15 +760,51 @@ class PolygonalSurfaceNodeSelector(Selector):
 
         glyph_mapper.SetSourceData(0, vtkPolyData())
         glyph_mapper.SetSourceConnection(1, src.GetOutputPort())
+        glyph_mapper.SetSourceConnection(2, src0.GetOutputPort())
         glyph_mapper.SetInputData(pick_surf)
         glyph_mapper.Update()
 
+        glyph_lut = vtkLookupTable()
+        glyph_lut.SetNumberOfColors(3)
+        glyph_lut.Build()
+        glyph_lut.SetTableValue(0,[.0,.0,.0,0.0])
+        glyph_lut.SetTableValue(1,[.2,.8,.2,1.0])
+        glyph_lut.SetTableValue(2,[1,1,.2,1.0])
+        glyph_lut.Modified()
+        glyph_mapper.SetLookupTable(glyph_lut)
+        glyph_mapper.SetScalarRange(0,2)
+        glyph_mapper.SetArrayName('Index')
         glyph_actor = vtkActor()
         glyph_actor.SetMapper(glyph_mapper)
+        
         self.renderer.AddActor(glyph_actor)
 
         return None
 
+
+    def _hover(self):
+        pos = self.style.GetInteractor().GetEventPosition()
+        self.picker.Pick(pos[0], pos[1], 0, self.style.GetDefaultRenderer())
+        id = self.picker.GetPointId()
+
+        if id >= 0:
+
+            if self.current_id is not None:
+                if self.current_id == id:
+                    return None
+                if self.selection.GetTuple(self.current_id)[0] == 2:
+                    self.selection.SetTuple(self.current_id, np.array([0], dtype=np.int64))
+                    self.current_id = None
+
+            if self.selection.GetTuple(id)[0]==0:
+                self.current_id = id
+                self.selection.SetTuple(id, np.array([2], dtype=np.int64))
+
+            self.selection.Modified()
+            self.render_window.Render()
+
+        return None
+        
 
     def _select(self):
 
@@ -695,18 +812,19 @@ class PolygonalSurfaceNodeSelector(Selector):
         self.picker.Pick(pos[0], pos[1], 0, self.style.GetDefaultRenderer())
         id = self.picker.GetPointId()
         if id >= 0:
-            self.current_id = id
             tup = self.selection.GetTuple(id)
-            if not tup[0]:
+            if tup[0] != 1:
+                if tup[0] == 2: # doesn't have to, but it's nice
+                    self.current_id = 0
                 self.selection.SetTuple(id, np.array([1], dtype=np.int64))
                 self.selection.Modified()
                 self.render_window.Render()
+
         return None
         
 
     def _deselect(self):
 
-        self.current_id = None
         self.selection.Fill(0)
         self.selection.Modified()
         self.render_window.Render()
@@ -714,27 +832,45 @@ class PolygonalSurfaceNodeSelector(Selector):
         
 
     def _modify(self):
-        print('modify')
         return None
 
 
     def left_button_press_event(self):
+
         if self.mouse_status & MOUSE.CTRL:
             return self._select()
+        
         return super().left_button_press_event()
 
 
     def mouse_move_event(self):
-        if self.mouse_status & MOUSE.CTRL and self.mouse_status & MOUSE.LEFT:
-            return self._select()
+        if self.interactor.GetControlKey():
+            if self.mouse_status & MOUSE.LEFT:
+                return self._select()
+            else:
+                return self._hover()
         return super().mouse_move_event()
 
 
     def key_press_event(self, key):
+
         if key == 'Escape':
             return self._deselect()
         elif key == 'space':
             return self._modify()
+
+        return super().key_press_event(key)
+
+
+    def key_release_event(self, key):
+
+        if key.startswith('Control'):
+            if self.current_id is not None:
+                if self.selection.GetTuple(self.current_id)[0] == 2:
+                    self.selection.SetTuple(self.current_id, np.array([0], dtype=np.int64))
+                    self.current_id = None
+            self.selection.Modified()
+            self.render_window.Render()
 
         return super().key_press_event(key)
 
