@@ -321,7 +321,7 @@ class HexahedralMeshFix(PolygonalSurfaceNodeSelector):
         return super().initialize(self.pick_surf, self.show_surf)
 
 
-    def _modify(self):
+    def _move(self):
 
         nodes = vtk_to_numpy(self.points.GetData()) # shares memory with vtk
         elems = self.elems

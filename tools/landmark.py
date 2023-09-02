@@ -1,8 +1,15 @@
 import os
 import re, csv
+import numpy as np
+from pandas import read_excel
 from .ui import MODE, PolygonalSurfacePointSelector
+from .polydata import polydata_from_stl
 
 class Landmark(dict): 
+
+    def mutable(self):
+        return {k:list(v) for k,v in self.items()}
+    
     # convenience class
     def bilateral(self):
         return { n:v for n,v in self.items() if ('-L' in n or '-R' in n) and n !='Stm-L' }
@@ -47,27 +54,90 @@ def landmark_from_file(file):
     return _reg_match(lines)
 
 
+def landmark_from_excel(file):
+    lmk_pd = read_excel(file)
+    
+    coord_fields = ('Original_X', 'Original_Y', 'Original_Z')
+    data_fields = ['Landmark Name',*coord_fields]
+    if all([x in lmk_pd for x in data_fields]):
+        # this file is probably from AA
+        lmk_aa = lmk_pd[data_fields]
+        if 'Landmark_Offset' in lmk_aa['Landmark Name'].values:
+            offset_row_num = np.nonzero(lmk_aa['Landmark Name']=='Landmark_Offset')[0]
+            assert(len(offset_row_num)==1)
+            lmk_pd = lmk_aa.drop(index=offset_row_num)
+            lmk_pd.loc[:,coord_fields] += lmk_aa.loc[offset_row_num,coord_fields].values
+
+    labels, *coords = zip(*lmk_pd.dropna(axis=0).values)
+    return Landmark(zip(labels, zip(*coords)))
+
+        
+
+def write_landmark_to_file(lmk, file):
+    with open(file, 'w', newline='') as f:
+            
+        writer = csv.writer(f)
+        for k,v in lmk.items():
+            writer.writerow([k,*v])
+        return None
+
 
 class Digitizer(PolygonalSurfacePointSelector):
 
 
-    def initialize(self, pick_surf, lmk_path, override=False):
-        self.add_pick_polydata(pick_surf)
-        self.file_path = lmk_path
+    def initialize(self, stl_path_or_polydata, mode=None, read_path='', name_list='', save_path='', override=False):
+        self.read_path = read_path
         self.override = override
-        mode = MODE.MODIFY
-        lmk_dict = landmark_from_file(lmk_path)
-        return super().initialize(mode, lmk_dict)
+        self.save_path = save_path if save_path else read_path
+
+        # check save_path
+        if os.path.exists(self.save_path) and not os.path.isfile(self.save_path):
+            self.save_path = None
+            print('ignoring save_path')
+
+        # if read_path or list of landmark labels is given
+        # run it in editing mode
+        if read_path or name_list:
+
+            # initialize nan landmarks if only a list of landmark names are given
+            if name_list and not read_path:
+                lmk = Landmark(zip(name_list, ((float('nan'),)*3,)*len(name_list)))
+
+            # if a file is given, read the file
+            else:
+                lmk = landmark_from_file(read_path)
+            
+            super().initialize(mode if mode else MODE.EDIT, named_points=lmk)
+        
+        # otherwise, run it in adding mode
+        else:
+
+            super().initialize(mode if mode else MODE.FREE, named_points=Landmark())
+
+        if isinstance(stl_path_or_polydata, str):
+            self.add_pick_polydata(polydata_from_stl(stl_path_or_polydata))
+        else:
+            self.add_pick_polydata(stl_path_or_polydata)
+
+        return None
 
 
     def save(self):
-        if self.override:
-            with open(self.file_path, 'w', newline='') as f:
-                self.save_file(f)
-        else:
-            self.save_ui(title='Save landmarks to *.csv ...',
-                         initialdir=os.path.dirname(self.file_path),
-                         initialfile=os.path.basename(self.file_path))
+        if self.save_path:
+            if os.path.exists(self.save_path) and not os.path.isfile(self.save_path):
+                self.save_path = None
+                print('ignoring save_path')
+
+            elif self.override or not os.path.exists(self.save_path):
+                with open(self.save_path, 'w', newline='') as f:
+                    self.save_file(f)
+                return None
+        
+        self.save_ui(
+            title='Save landmarks to *.csv ...',
+            initialdir=os.path.dirname(self.read_path if self.read_path else None),
+            initialfile=os.path.basename(self.read_path if self.read_path else None)
+        )
         
         return None
 
@@ -78,6 +148,7 @@ class Digitizer(PolygonalSurfacePointSelector):
             writer.writerow([self.selection_names[i], *self.selection_points.GetPoint(i)])
         return None
 
+
 def _reg_match(input_string:str, sep:str=None, line_break:str=None):
 
     if not sep:
@@ -87,18 +158,18 @@ def _reg_match(input_string:str, sep:str=None, line_break:str=None):
 
     # reg exp elements
     number = r'([+-]?\d+(?:\.\d+)?(?:[Ee]{1}[+-]?\d+)?)' # a full form: (+)(0)(.12)(E34)
-    name = r'(\w+\'?(?:[_-]+\w+)?)'
+    name = r'(\w+\'?(?:-[LRU])?(?:[_-]+\w+)?)'
     sep = rf'(?:[ \t]*{sep}[ \t]*)' 
     line_break = rf'[ \t]*{line_break}' # takes care of empty lines too
 
     # reg exp match each line
-    reg_line = rf'^[ \t]*(?:{name}{sep})?{number}{sep}{number}{sep}{number}{line_break}' # anchor the line begining but not the end
+    reg_line = rf'^[ \t]*(?:{name}{sep})?{number}{sep}{number}{sep}{number}(?:{line_break})?' # anchor the line begining but not the end
     matches = re.findall(reg_line, input_string, re.MULTILINE|re.DOTALL)
     if not len(matches):
         return {}
     labels, *coords = zip(*matches)
     labels = [l if l else str(i+1) for i,l in enumerate(labels)]
-    coords = [[float(x),float(y),float(z)] for x,y,z in zip(*coords)]
+    coords = [(float(x),float(y),float(z)) for x,y,z in zip(*coords)]
     return Landmark(zip(labels, coords))
 
 
@@ -220,13 +291,17 @@ def _test():
   -1.1374366e+01  -6.3966867e+01   4.0902934e+01
    2.0248317e+01  -6.4135118e+01   4.1027534e+01'''
     x = _reg_match(test_string_2)
-
+    return x
     # x = landmark_from_file(r'P:\Kevin Gu - DO NOT TOUCH\soft tissue prediction (pre-post-paired-40-send-copy-0321)\pre-post-paired-40-send-copy-0321\n0001\skin_landmark.txt')
     # print(x)
-    x = landmark_from_file(r'C:\data\pre-post-paired-soft-tissue-lmk-23\n0001\skin-pre-23-cass.txt')
+    # x = landmark_from_file(r'C:\data\pre-post-paired-soft-tissue-lmk-23\n0001\skin-pre-23-cass.txt')
     print(x)
     print(x.midline())
 
 
+def _test_excel():
+    landmark_from_excel(r'.\test\lmk.xlsx')
+
+
 if __name__ == '__main__':
-    _test()
+    _test_excel()

@@ -3,7 +3,7 @@ import numpy
 import numpy as np
 from vtkmodules.vtkCommonColor import vtkNamedColors
 from vtkmodules.vtkCommonMath import vtkMatrix4x4
-from vtkmodules.vtkCommonCore import vtkPoints, vtkIdList
+from vtkmodules.vtkCommonCore import vtkPoints, vtkIdList, vtkAbstractArray
 from vtkmodules.vtkInteractionWidgets import vtkImplicitPlaneRepresentation
 
 from vtkmodules.vtkCommonTransforms import (
@@ -51,7 +51,7 @@ from vtkmodules.vtkRenderingCore import (
     vtkActor,
     vtkPolyDataMapper,
 )
-
+from vtkmodules.util.vtkConstants import VTK_DOUBLE
 
 def polydata_from_stl(file:str):
     reader = vtkSTLReader()
@@ -166,26 +166,32 @@ def polydata_from_numpy(nodes, polys, lines=True, verts=False):
 
     return polyd
 
-def polydata_from_plane(plane_abcd, bounds):
+def polydata_from_plane(plane_abcd, bounds, polyd=None):
+    plane_abcd = np.asarray(plane_abcd)
+    # an implicit plane `plane_abcd` limited by `bounds`
     intersections = np.empty((18,), dtype=float)
     intersections[...] = float('nan')
     vtkBox.IntersectWithPlane(bounds, -plane_abcd[:-1]*plane_abcd[-1], plane_abcd[:-1], intersections)
     verts = intersections.reshape(-1,3)
     verts = verts[np.any(verts!=0, axis=1) & np.any(~np.isnan(verts), axis=1)]
 
-    polyd = vtkPolyData()
+    if polyd is None:
+        polyd = vtkPolyData()
+
     points = vtkPoints()
     for p in verts:
         points.InsertNextPoint(p)
-    cells = vtkCellArray()
-    l = vtkPolygon()
     n = points.GetNumberOfPoints()
-    l.GetPointIds().SetNumberOfIds(n)
-    for i in range(n):
-        l.GetPointIds().SetId(i,i)
-    cells.InsertNextCell(l)
+    cells = vtkCellArray()
+    cells.InsertNextCell(n, list(range(n)))
+    # l = vtkPolygon()
+    # l.GetPointIds().SetNumberOfIds(n)
+    # for i in range(n):
+    #     l.GetPointIds().SetId(i,i)
+    # cells.InsertNextCell(l)
     polyd.SetPoints(points)
     polyd.SetPolys(cells)
+    polyd.Modified()
 
     return polyd
 
@@ -271,13 +277,57 @@ def clip_polydata_with_mesh(image_polydata, mesh_polydata):
     return clipped
 
 
-def icp_register(source, target):
+def icp(source, target, init_pose=None, max_iterations=2000, tolerance=0.001):
+    from simpleicp import PointCloud, SimpleICP
+    import numpy as np
 
-    T = vtkIterativeClosestPointTransform()
-    T.SetSource(source)
-    T.SetTarget(target)
-    T.Update()
-    return T.GetOutput()
+    # Create point cloud objects
+    target = PointCloud(target, columns=["x", "y", "z"])
+    source = PointCloud(source, columns=["x", "y", "z"])
+
+    # Create simpleICP object, add point clouds, and run algorithm!
+    icp = SimpleICP()
+    icp.add_point_clouds(target, source)
+    H, X_mov_transformed, rigid_body_transformation_params, distance_residuals = icp.run(correspondences=min(target._num_points//2,source._num_points//2),min_change=.5)
+    return H
+    
+
+
+
+
+# def rigid_register(source:vtkPolyData, target:vtkPolyData):
+
+#     from pycpd import RigidRegistration
+#     from vtk import vtkDecimatePro 
+#     from vtkmodules.util.numpy_support import vtk_to_numpy
+
+#     source = vtk_to_numpy(source.GetPoints().GetData())
+#     target = vtk_to_numpy(target.GetPoints().GetData())
+
+#     # create a RigidRegistration object
+#     reg = RigidRegistration(X=target, Y=source)
+#     # run the registration & collect the results
+#     TY, (s_reg, R_reg, t_reg) = reg.register()   
+#     T = np.eye(4)
+#     T[:-1,:-1] = R_reg
+#     T[:-1,-1] = t_reg
+#     return T 
+
+
+
+
+# def icp_register(source, target, return_numpy_instead=True):
+
+#     T = vtkIterativeClosestPointTransform()
+#     T.SetSource(source)
+#     T.SetTarget(target)
+#     T.Update()
+#     if return_numpy_instead:
+#         X = np.array([T.GetMatrix().GetElement(*ij) for ij in np.ndindex((4,4))]).reshape(4,4)
+#     else:
+#         X = T.GetMatrix()
+
+#     return X
 
 
 def triangle_strip(ind_1d:numpy.ndarray):

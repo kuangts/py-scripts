@@ -3,7 +3,7 @@ from enum import IntFlag
 from enum import auto as enum_auto
 import numpy as np
 from vtkmodules.vtkCommonColor import vtkNamedColors, vtkColorSeries
-from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData, vtkImageData, vtkExplicitStructuredGrid, vtkStructuredGrid
+from vtkmodules.vtkCommonDataModel import vtkPointSet, vtkPolyData, vtkImageData, vtkExplicitStructuredGrid, vtkStructuredGrid, vtkVector3d, vtkPlanes
 from vtkmodules.vtkRenderingCore import (
     vtkActor,
     vtkMapper,
@@ -21,13 +21,16 @@ from vtkmodules.vtkRenderingCore import (
     vtkInteractorStyle,
     vtkGlyph3DMapper,
     vtkProp,
-    vtkBillboardTextActor3D
+    vtkBillboardTextActor3D,
+    vtkCoordinate
 )
 from vtkmodules.vtkFiltersGeneral import vtkCurvatures
-from vtkmodules.vtkFiltersCore import vtkGlyph3D, vtkExtractEdges
-from vtkmodules.vtkCommonCore import vtkLookupTable, vtkIdTypeArray, vtkPoints
+from vtkmodules.vtkFiltersCore import vtkGlyph3D, vtkExtractEdges, vtkAppendPolyData
 from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
-from vtkmodules.vtkFiltersSources import vtkSphereSource 
+from vtkmodules.vtkCommonCore import vtkLookupTable, vtkIdTypeArray, vtkPoints, vtkFloatArray
+from vtkmodules.vtkFiltersSources import vtkSphereSource
+
+from .polydata import *
 
 #_______________________#
 # crash without following lines
@@ -75,23 +78,23 @@ class MOUSE(IntFlag):
 
 class MODE(IntFlag):
     SELECT = enum_auto()
-    _MOD = enum_auto()
-    _DEL = enum_auto()
-    ADD = enum_auto()
-    MODIFY = _MOD | SELECT
-    DELETE = _DEL | SELECT
+    _EDIT = enum_auto()
+    _ADD = enum_auto()
+    EDIT = SELECT | _EDIT
+    ADD = SELECT | _ADD
+    FREE = EDIT | ADD
 
     def allows_select(self):
         return (self & self.SELECT) != 0
 
     def allows_add(self):
-        return (self & self.ADD) != 0
+        return (self & self._ADD) != 0
 
-    def allows_modify(self):
-        return (self & self.MODIFY) != 0
+    def allows_edit(self):
+        return (self & self._EDIT) != 0
 
     def allows_delete(self):
-        return (self & self.DELETE) != 0
+        return (self & self._ADD) != 0
 
 
 class Window():
@@ -114,7 +117,14 @@ class Window():
 
         self.lut = self.get_diverging_lut()
 
-        self.style = self.DEFAULT_STYLE_CLASS()
+        return None
+
+
+    def initialize(self, style=None):
+        if style is None:
+            style = self.DEFAULT_STYLE_CLASS()
+
+        self.style = style
         # Interactor callbacks
         self.style.AddObserver('LeftButtonPressEvent', self.mouse_event)
         self.style.AddObserver('LeftButtonReleaseEvent', self.mouse_event)
@@ -179,7 +189,6 @@ class Window():
 
     def key_event(self, obj, event):
         key = obj.GetInteractor().GetKeySym()
-        print(key)
         if event=='KeyPressEvent':
             # disable auto-repeat by monitoring held keys
             if not hasattr(self, '_keys'):
@@ -187,6 +196,7 @@ class Window():
             if key in self._keys:
                 return None
             else:
+                print(key)
                 self._keys.append(key)
 
             print('event:' + key + ' pressed')
@@ -263,8 +273,8 @@ class Window():
             self.mouse_status = 0
 
         elif event == 'MouseMoveEvent':
-            self.mouse_status = self.mouse_status | MOUSE.MOVED
             self.mouse_move_event()
+            self.mouse_status = self.mouse_status | MOUSE.MOVED
 
 
     # Interactor callbacks
@@ -340,6 +350,40 @@ class Window():
         return colors.GetColor3d(colornames[np.random.randint(0,len(colornames))])
 
 
+    def add_points(self, points:vtkPointSet, sphere_radius=1.0, color_index:np.ndarray=None, lut=None):
+
+        color_array = vtkIdTypeArray()
+        color_array.SetName('Color')
+        if color_index is None:
+            color_index = np.zeros((points.GetNumberOfPoints(),))
+            
+        color_index = np.asarray(color_index, dtype=np.int64)
+        for i in color_index:
+            color_array.InsertNextTuple((i,))
+
+        points.GetPointData().AddArray(color_array)
+        points.GetPointData().SetActiveScalars('Color')
+
+        src = vtkSphereSource()
+        src.SetRadius(sphere_radius)
+        src.Update()
+
+        glyph_mapper = vtkGlyph3DMapper()
+        glyph_mapper.SetSourceConnection(0, src.GetOutputPort())
+        glyph_mapper.SetInputData(points)
+        glyph_mapper.SetScalarRange(color_index.min(), color_index.max())
+        glyph_mapper.SetArrayName('Color')
+        glyph_mapper.SetLookupTable(lut if lut else self.get_diverging_lut())
+        glyph_mapper.Update()
+
+        actor = vtkActor()
+        actor.SetMapper(glyph_mapper)
+        self.renderer.AddActor(actor)
+
+        return actor
+
+
+
     def add_polydata(self, polyd:vtkPolyData):
         mapper = vtkPolyDataMapper()
         mapper.SetInputData(polyd)
@@ -380,7 +424,6 @@ class Window():
         return actor
 
 
-
 class Selector(Window):
 
 
@@ -388,25 +431,17 @@ class Selector(Window):
     DEFAULT_PICKER_TOLERANCE = 1e-6
 
 
-    def __init__(self, **kwargs):
-        super().__init__()
-        self.attach_picker(**{k:v for k,v in kwargs.items() if k.startswith('picker')})
-        return None
-
-
-    def attach_picker(self, picker=None, picker_tolerance=None):
+    def initialize(self, picker=None):
         if picker is None:
             picker = self.DEFAULT_PICKER_CLASS()
         self.picker = picker
-        self.picker.SetTolerance(self.DEFAULT_PICKER_TOLERANCE if picker_tolerance is None else picker_tolerance)
+        self.picker.SetTolerance(self.DEFAULT_PICKER_TOLERANCE)
         self.picker.InitializePickList()
         self.picker.SetPickFromList(True)
+
+        return super().initialize()
+
         
-
-    def initialize_selection_indices(self):
-        pass
-
-
     def add_pick_polydata(self, polyd):
         
         cc = vtkCurvatures()
@@ -479,17 +514,13 @@ class Selector(Window):
         return [m.GetInput() for m in self.get_pick_mappers()]
 
 
-    def get_selection_indices(self):
-        pass
-
-
 class PolygonalSurfacePointSelector(Selector):
     '''a simple instruction on user interactions:
 
     simple mouse click to select or deselect a point
 
     hold ctrl key and click to:
-        if a point is selected, modify
+        if a point is selected, move
         if no point is selected, add a new one
 
     press "Delete" key to delete the current selection
@@ -501,32 +532,32 @@ class PolygonalSurfacePointSelector(Selector):
         sel.add_pick_polydata(some_vtkPolyData_instance) # add surface to pick from
         sel.initialize(
             mode=MODE.SELECT|MODE.ADD, 
-            dict_of_named_points={'Sella'=[1,2,3],'Porion'=[4,5,6]})  # set the mode and add initial points
+            named_points={'Sella'=[1,2,3],'Porion'=[4,5,6]})  # set the mode and add initial points
         self.start()
     ```
-    each action (select, modify, add, delete) can be enabled or disable by setting mode
+    each action (select, move, add, delete) can be enabled or disable by setting mode
 
     '''
     DEFAULT_GLYPH_COLOR = (0.8, 0.0, 0.0)
     SELECTED_GLYPH_COLOR = (0.5, 1.0, 0.5)
 
 
-    def initialize(self, mode=MODE.MODIFY, dict_of_named_points={}):
+    def initialize(self, mode=MODE.EDIT, sphere_radius=.5, named_points={}):
 
         self.mode = mode
-        self.selection_names = list(dict_of_named_points.keys())
+        self.selection_names = list(named_points.keys())
         self.selection_points = vtkPoints()
         self.current_id = None
 
-        for c in dict_of_named_points.values():
-            self.selection_points.InsertNextPoint(c)
+        for c in named_points.values():
+            self.selection_points.InsertNextPoint(*c)
 
         self.selection_points.Modified()
         
         inp = vtkPointSet()
         inp.SetPoints(self.selection_points)
         src = vtkSphereSource()
-        src.SetRadius(1.0)
+        src.SetRadius(sphere_radius)
         src.Update()
 
         # set up glyph3d
@@ -540,7 +571,7 @@ class PolygonalSurfacePointSelector(Selector):
         self.lookup_table = vtkColorTransferFunction()
         self.lookup_table.Build()
         # self.lookup_table.IndexedLookupOn()
-        for x in range(len(dict_of_named_points)):
+        for x in range(len(named_points)):
             self.lookup_table.AddRGBPoint(x,*self.DEFAULT_GLYPH_COLOR)
 
         # display these points
@@ -575,8 +606,11 @@ class PolygonalSurfacePointSelector(Selector):
         self.legend.PickableOff()
         self.renderer.AddActor(self.legend)
 
+        return super().initialize()
+        
 
-    def _next_name(self):
+
+    def _next_available_name(self):
         i = 1
         while str(i) in self.selection_names:
             i = i+1
@@ -592,7 +626,7 @@ class PolygonalSurfacePointSelector(Selector):
         # but for simplicity, they are not written in if-elif-else
 
         # if ctrl is not pressed, and a landmark is hit, possibly select the landmark
-        if not self.mouse_status & MOUSE.CTRL and self.mode.allows_select():
+        if not self.interactor.GetControlKey() and self.mode.allows_select():
 
             if self.glyph_picker.GetCellId() >= 0:
                 self._select()
@@ -600,12 +634,12 @@ class PolygonalSurfacePointSelector(Selector):
                 self._deselect()
 
 
-        elif self.mouse_status & MOUSE.CTRL:
+        elif self.interactor.GetControlKey():
             # if a landmark is already selected and modification is enabled
-            if self.current_id is not None and self.mode.allows_modify():
+            if self.current_id is not None and self.mode.allows_edit():
 
                 # then update its location and end interaction
-                self._modify()
+                self._move()
                 return None
 
             # if a landmark is not selected and addition is enabled
@@ -619,20 +653,22 @@ class PolygonalSurfacePointSelector(Selector):
         return super().left_button_press_event()
 
 
-    def _select(self):
+    def _select(self, id=None):
+        if not self.mode.allows_select():
+            return None
+        
+        if id is None:
+            # find out which landmark it is
+            ids = self.glyph_picker.GetDataSet().GetPointData().GetArray('InputPointIds')
+            id = vtkIdTypeArray.SafeDownCast(ids).GetTuple(self.glyph_picker.GetPointId())[0]
+            id = int(id)
 
-        if self.current_id is not None:
-            self.lookup_table.AddRGBPoint(self.current_id, *self.DEFAULT_GLYPH_COLOR)
+        if self.current_id != id:
+            if self.current_id is not None:
+                self.lookup_table.AddRGBPoint(self.current_id, *self.DEFAULT_GLYPH_COLOR)
 
-        glyph_polyd = self.glyph_picker.GetDataSet()
-
-        # find out which landmark it is
-        ids = glyph_polyd.GetPointData().GetArray('InputPointIds')
-        id_ = vtkIdTypeArray.SafeDownCast(ids).GetTuple(self.glyph_picker.GetPointId())[0]
-        id_ = int(id_)
-
-        self.lookup_table.AddRGBPoint(id_, *self.SELECTED_GLYPH_COLOR)
-        self.current_id = id_
+            self.lookup_table.AddRGBPoint(id, *self.SELECTED_GLYPH_COLOR)
+            self.current_id = id
 
         self.legend.SetInput(self.selection_names[self.current_id])
         self.render_window.Render()
@@ -641,6 +677,7 @@ class PolygonalSurfacePointSelector(Selector):
 
 
     def _deselect(self):
+
         if self.current_id is not None:
             self.lookup_table.AddRGBPoint(self.current_id, *self.DEFAULT_GLYPH_COLOR)
 
@@ -651,7 +688,10 @@ class PolygonalSurfacePointSelector(Selector):
         return None
 
 
-    def _modify(self):
+    def _move(self):
+        if self.current_id is None or not self.mode.allows_edit():
+            return None
+        
         pos = self.style.GetInteractor().GetEventPosition()
         self.picker.Pick(pos[0], pos[1], 0, self.style.GetDefaultRenderer())
 
@@ -665,11 +705,13 @@ class PolygonalSurfacePointSelector(Selector):
 
 
     def _add(self):
+        if not self.mode.allows_add():
+            return None
         pos = self.style.GetInteractor().GetEventPosition()
         self.picker.Pick(pos[0], pos[1], 0, self.style.GetDefaultRenderer())
 
-        if self.picker.GetCellId() >= 0:
-            self.selection_names.append(self._next_name())
+        if self.picker.GetCellId() >= 0 :
+            self.selection_names.append(self._next_available_name())
             self.selection_points.InsertNextPoint(self.picker.GetPickPosition())
             self.selection_points.Modified()
             self.lookup_table.AddRGBPoint(self.selection_points.GetNumberOfPoints()-1,*self.DEFAULT_GLYPH_COLOR)
@@ -700,11 +742,25 @@ class PolygonalSurfacePointSelector(Selector):
         if key == "Escape":
             return self._deselect()
 
+        elif key == "Up" or key == "Left" :
+            if self.current_id is None and self.selection_points.GetNumberOfPoints():
+                self._select(id=0)
+            elif self.current_id < self.selection_points.GetNumberOfPoints()-1:
+                self._select(id=self.current_id+1)
+            return None
+
+        elif key == "Down" or key == "Right":
+            if self.current_id is None and self.selection_points.GetNumberOfPoints():
+                self._select(id=self.selection_points.GetNumberOfPoints()-1)
+            elif self.current_id > 0:
+                self._select(id=self.current_id-1)
+            return None
+
         elif key.startswith('Control'):
             if self.current_id is None and self.mode.allows_add():
-                self.legend.SetInput(f'Adding Point {self._next_name()}')
-            elif self.current_id is not None and self.mode.allows_modify():
-                self.legend.SetInput(f'Modifying {self.selection_names[self.current_id]}')
+                self.legend.SetInput(f'Adding Point {self._next_available_name()}')
+            elif self.current_id is not None and self.mode.allows_edit():
+                self.legend.SetInput(f'Moving {self.selection_names[self.current_id]}')
             self.render_window.Render()
             return None
 
@@ -729,7 +785,7 @@ class PolygonalSurfacePointSelector(Selector):
 
 class PolygonalSurfaceNodeSelector(Selector):
 
-    def initialize(self, pick_surf:vtkPolyData, other_surf:vtkPolyData=None):
+    def initialize(self, pick_surf:vtkPolyData, other_surf:vtkPolyData=None, sphere_radius=.5):
 
         self.add_pick_polydata(pick_surf)
         if other_surf is not None:
@@ -745,11 +801,8 @@ class PolygonalSurfaceNodeSelector(Selector):
         pick_surf.GetPointData().SetActiveScalars('Index')
 
         src = vtkSphereSource()
-        src.SetRadius(.5)
+        src.SetRadius(sphere_radius)
         src.Update()
-        src0 = vtkSphereSource()
-        src0.SetRadius(.5)
-        src0.Update()
 
         glyph_mapper = vtkGlyph3DMapper()
         glyph_mapper.SetSourceIndexArray('Index')
@@ -760,7 +813,7 @@ class PolygonalSurfaceNodeSelector(Selector):
 
         glyph_mapper.SetSourceData(0, vtkPolyData())
         glyph_mapper.SetSourceConnection(1, src.GetOutputPort())
-        glyph_mapper.SetSourceConnection(2, src0.GetOutputPort())
+        glyph_mapper.SetSourceConnection(2, src.GetOutputPort())
         glyph_mapper.SetInputData(pick_surf)
         glyph_mapper.Update()
 
@@ -778,6 +831,8 @@ class PolygonalSurfaceNodeSelector(Selector):
         glyph_actor.SetMapper(glyph_mapper)
         
         self.renderer.AddActor(glyph_actor)
+
+        super().initialize()
 
         return None
 
@@ -831,13 +886,13 @@ class PolygonalSurfaceNodeSelector(Selector):
         return None
         
 
-    def _modify(self):
+    def _move(self):
         return None
 
 
     def left_button_press_event(self):
 
-        if self.mouse_status & MOUSE.CTRL:
+        if self.interactor.GetControlKey():
             return self._select()
         
         return super().left_button_press_event()
@@ -857,7 +912,7 @@ class PolygonalSurfaceNodeSelector(Selector):
         if key == 'Escape':
             return self._deselect()
         elif key == 'space':
-            return self._modify()
+            return self._move()
 
         return super().key_press_event(key)
 
@@ -874,4 +929,170 @@ class PolygonalSurfaceNodeSelector(Selector):
 
         return super().key_press_event(key)
 
+
+class PolygonalSurfacePlanesCutter(Selector):
+    '''????????????????????????????????
+    counter-clockwise, 0 - dark gray, remove, 1 - light gray, keep
+    '''
+
+
+    def initialize(self, stl_path_or_polydata):
+
+        if isinstance(stl_path_or_polydata, str):
+            polyd = polydata_from_stl(stl_path_or_polydata)
+        else:
+            polyd = stl_path_or_polydata
+
+        self.clipper = vtkClipPolyData()
+        self.clipper.SetInputData(polyd)
+        self.clipper.GenerateClippedOutputOn()
+        self.planes_points = vtkPoints()
+        self.planes_normals = vtkFloatArray()
+        self.planes_normals.SetNumberOfComponents(3)
+
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputConnection(self.clipper.GetOutputPort(0))
+        actor = vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(.4,.4,.4)
+        self.renderer.AddActor(actor)
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputConnection(self.clipper.GetOutputPort(1))
+        actor = vtkActor()
+        actor.SetMapper(mapper)
+        self.renderer.AddActor(actor)
+
+        self.planes_polyd = vtkAppendPolyData()
+        self.planes_polyd.AddInputData(vtkPolyData())  # so that the program would not complain
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputConnection(self.planes_polyd.GetOutputPort())
+        actor = vtkActor()
+        actor.SetMapper(mapper)
+        self.renderer.AddActor(actor)
+
+        self.cut()
+
+        return super().initialize()
+        
+
+    def display_to_world(self, ij):
+        coordinate = vtkCoordinate()
+        coordinate.SetCoordinateSystemToDisplay()
+        coordinate.SetValue(*ij, 0)
+        xyz = coordinate.GetComputedWorldValue(self.renderer)
+
+        return xyz
+
+
+
+    def left_button_press_event(self):
+        
+        if self.mouse_status & MOUSE.CTRL:
+
+            points = vtkPoints()
+            points.InsertNextPoint(*self.display_to_world(self.interactor.GetEventPosition()))
+            points.InsertNextPoint([float('nan')]*3)
+            lines = vtkCellArray()
+            lines.InsertNextCell(2,[0,1])
+            polyd = vtkPolyData()
+            polyd.SetPoints(points)
+            polyd.SetLines(lines)
+            mapper = vtkPolyDataMapper()
+            mapper.SetInputData(polyd)
+
+            self.line_actor = vtkActor()
+            self.line_actor.SetMapper(mapper)
+            self.line_actor.GetProperty().EdgeVisibilityOn()
+            self.line_actor.GetProperty().SetColor(1,0,0)
+            self.line_actor.GetProperty().SetLineWidth(2)
+            
+            return None
+
+        # continue with a normal press
+        return super().left_button_press_event()
+
+
+    def mouse_move_event(self):
+
+        if self.mouse_status & MOUSE.CTRL and self.mouse_status & MOUSE.LEFT :
+            if not self.mouse_status & MOUSE.MOVED:
+                # add line_actor upon first movement
+                self.renderer.AddActor(self.line_actor)
+
+            # set moving point of the line
+            points = self.line_actor.GetMapper().GetInput().GetPoints()
+            points.SetPoint(1,*self.display_to_world(self.interactor.GetEventPosition()))     
+            points.Modified()
+            
+            self.render_window.Render()
+
+            return None
+
+        # continue with a normal press
+        return super().mouse_move_event()
+
+
+    def left_button_release_event(self):
+        
+        if self.mouse_status & MOUSE.CTRL and self.mouse_status & MOUSE.LEFT:
+            if self.mouse_status & MOUSE.MOVED and self.line_actor:
+                
+                pts = self.line_actor.GetMapper().GetInput().GetPoints() 
+                anchor = np.array(pts.GetPoint(0))
+                moving = np.array(pts.GetPoint(1))
+                self.renderer.RemoveActor(self.line_actor)
+                self.line_actor = None
+
+                campos = np.array(self.renderer.GetActiveCamera().GetPosition())
+                normal = np.cross(moving - anchor, campos - moving)
+                normal = normal/np.sum(normal**2)**.5
+                bd = self.clipper.GetInput().GetBounds()
+                bd = np.array(bd)+np.array([-1,1,-1,1,-1,1])*10
+                plane_polyd = polydata_from_plane([*normal, -np.array(normal).dot(anchor)], bd.tolist())
+
+                # add this plane
+                self.planes_points.InsertNextPoint(*anchor)
+                self.planes_normals.InsertNextTuple(normal.tolist())
+                self.cut()
+                self.planes_polyd.AddInputData(plane_polyd)
+                self.planes_polyd.Update()
+                self.render_window.Render()
+                return None
+
+        
+        return super().left_button_release_event()
+
+
+    
+    def cut(self):
+        clip_func = vtkPlanes()
+        clip_func.SetPoints(self.planes_points)
+        clip_func.SetNormals(self.planes_normals)
+        self.clipper.SetClipFunction(clip_func)
+        self.clipper.Update()
+        return None
+
+
+    def reset(self):
+        self.planes_points.Reset()
+        self.planes_normals.Reset()
+        self.planes_polyd.RemoveAllInputs()
+        self.planes_polyd.AddInputData(vtkPolyData())
+        self.planes_polyd.Update()
+        self.cut()
+
+        return None
+
+
+
+    def key_press_event(self, key):
+
+        if key == "Escape":
+            self.reset()
+            self.render_window.Render()
+            return None
+
+        return super().key_press_event(key)
+
+            
 

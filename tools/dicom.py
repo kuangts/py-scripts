@@ -54,10 +54,10 @@ def read(file_or_dir):
     reader.SetFileNames(dicom_names)
     img = reader.Execute()
     
-    # if '0028|1052' in info and '0028|1053' in info:
-    #     img = (img - info['0028|1052']) * info['0028|1053']
-    #     info.pop('0028|1052')
-    #     info.pop('0028|1053')
+    if '0028|1052' in info and '0028|1053' in info:
+        img = (img - info['0028|1052']) * info['0028|1053']
+        info.pop('0028|1052')
+        info.pop('0028|1053')
     
     setattr(img, 'info', info)
     return img
